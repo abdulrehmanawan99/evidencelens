@@ -1,0 +1,18 @@
+name: evidencelens
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_PASSWORD: evidencelens_local_admin
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/01-evidencelens.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d evidencelens"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+volumes:
+  pgdata:

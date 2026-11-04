@@ -1,0 +1,16 @@
+.env
+.env.*
+!.env.example
+.venv/
+.local/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.next/
+node_modules/
+next-env.d.ts
+*.tsbuildinfo
+.DS_Store
+coverage/
+test-results/
+playwright-report/
