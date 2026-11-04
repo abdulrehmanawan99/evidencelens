@@ -7,6 +7,9 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .next/
+.next-v1/
+apps/web/public/pdf-assets/
+apps/web/public/pdf.worker.min.mjs
 node_modules/
 next-env.d.ts
 *.tsbuildinfo

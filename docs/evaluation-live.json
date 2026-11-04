@@ -1,0 +1,20 @@
+{
+  "dataset": "evidencelens-eval-v1",
+  "started_at": "2026-11-04T22:13:16.690741+00:00",
+  "suite": "live",
+  "split": "development",
+  "mode": "fixture",
+  "provider": "harbor-fixture-v1",
+  "embedding": {
+    "provider": "fixture",
+    "model": "hashed-lexical-demo-v1",
+    "dimensions": 64,
+    "endpoint": "fixture",
+    "chunking_version": "page-chunks-v1",
+    "distance": "cosine",
+    "fingerprint": "fc572408a7b9950d09105baa60ad9172e721ec4892467fa8b777de6dc67b8e21"
+  },
+  "results": [],
+  "state": "blocked",
+  "reason": "Configure and check a live generation and embedding provider."
+}

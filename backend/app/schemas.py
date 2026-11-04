@@ -16,6 +16,8 @@ class CollectionInput(BaseModel):
 class InvestigationInput(BaseModel):
     claim: str = Field(min_length=3, max_length=2000)
     allow_partial: bool = False
+    claim_id: str | None = None
+    expected_claim_revision: int | None = Field(default=None, ge=1)
 
     @field_validator("claim")
     @classmethod
@@ -50,6 +52,13 @@ class DocumentOut(BaseModel):
     created_at: str
     job_id: str | None
     error_code: str | None
+    family_id: str
+    version: int
+    active: bool
+    media_type: str
+    page_count: int
+    warnings: list[dict]
+    extraction_version: str
 
 
 class JobOut(BaseModel):
@@ -62,6 +71,9 @@ class JobOut(BaseModel):
     attempts: int
     error_code: str | None
     cancel_requested: bool
+    result_payload: dict | None
+    started_at: str | None
+    finished_at: str | None
 
 
 class FindingOut(BaseModel):
@@ -77,6 +89,8 @@ class FindingOut(BaseModel):
     decision: str
     note: str
     revision: int
+    page_number: int
+    document_version: int
 
 
 class InvestigationOut(BaseModel):
@@ -93,6 +107,10 @@ class InvestigationOut(BaseModel):
     findings: list[FindingOut]
     job: JobOut
     created_at: str
+    configuration: dict
+    provider_calls: list[dict]
+    claim_id: str | None
+    claim_revision: int
 
 
 class PassageOut(BaseModel):
@@ -102,9 +120,41 @@ class PassageOut(BaseModel):
     line_end: int
     start_offset: int
     ordinal: int
+    page_number: int
 
 
 class SourceOut(BaseModel):
+    page_number: int
     document: DocumentOut
     passages: list[PassageOut]
     next_after: int | None
+
+
+class ClaimInput(BaseModel):
+    text: str = Field(min_length=3, max_length=2000)
+    expected_revision: int | None = Field(default=None, ge=1)
+
+
+class SuggestInput(BaseModel):
+    passage_id: str
+
+
+class ExportInput(BaseModel):
+    expected_revision: int = Field(ge=0)
+    draft: bool = False
+
+
+class ProviderCheckInput(BaseModel):
+    collection_id: str
+
+
+class ExportOut(BaseModel):
+    id: str
+    investigation_id: str
+    review_revision: int
+    draft: bool
+    mode: str
+    state: str
+    checksum: str | None
+    created_at: str
+    job: JobOut

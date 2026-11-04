@@ -1,0 +1,30 @@
+{
+  "observed_at": "2026-11-04T22:13:43.302908+00:00",
+  "state": "Post-benchmark startup/readiness snapshot; not a steady-state or peak resource measurement.",
+  "containers": [
+    {
+      "Name": "evidencelens-v1-clean-api-1",
+      "CPUPerc": "52.76%",
+      "MemUsage": "68.52MiB / 768MiB",
+      "PIDs": "2"
+    },
+    {
+      "Name": "evidencelens-v1-clean-worker-1",
+      "CPUPerc": "0.61%",
+      "MemUsage": "59.8MiB / 768MiB",
+      "PIDs": "1"
+    },
+    {
+      "Name": "evidencelens-v1-clean-web-1",
+      "CPUPerc": "0.00%",
+      "MemUsage": "44.5MiB / 768MiB",
+      "PIDs": "11"
+    },
+    {
+      "Name": "evidencelens-v1-clean-db",
+      "CPUPerc": "27.78%",
+      "MemUsage": "42.14MiB / 7.751GiB",
+      "PIDs": "8"
+    }
+  ]
+}

@@ -1,48 +1,43 @@
-# Architecture of the implemented text/fixture slice
+# EvidenceLens architecture
 
-This document describes the current code. The larger portfolio plan remains proposed work beyond this slice.
+EvidenceLens is a private local installation: Next.js UI → FastAPI API → PostgreSQL 17/pgvector and a private artifact directory. A separate Python worker claims durable PostgreSQL jobs. Docker Compose also provides a complete local runtime. There is no Redis, hosted identity, crawling, or autonomous external action.
 
-```mermaid
-flowchart LR
-  B[Browser] --> W[Next.js on 127.0.0.1:3000]
-  W --> A[Same-origin rewrite to FastAPI on 127.0.0.1:8000]
-  A --> D[(PostgreSQL)]
-  A --> S[Private local TXT originals]
-  J[Separate Python worker] --> D
-  J --> S
-  J --> F[Bounded Harbor Transit fixture adapter]
-```
+## Data and ownership
 
-## Persistence and execution
+Collections have a server-assigned local owner. Every record-ID API checks the owning collection; composite database relationships constrain evidence to its collection and source. This boundary supports future accounts but does not authenticate people on a shared machine.
 
-`collections` owns `documents`, immutable extracted `passages`, `investigations`, `findings`, `review_events`, `jobs`, and ordered `job_events`. Composite foreign keys reject cross-collection passage/finding associations. The runtime chooses the local owner; client requests cannot select one.
+Document rows are immutable versions grouped by family ID; only one nondeleted version is active. Original bytes have SHA-256 hashes and random private storage keys. Page passages retain text offsets, page numbers, and line references. A replacement or active-version change increments the collection revision and invalidates previous analyses/exports. Retained versions stay readable until their family is deleted.
 
-Uploads stream a raw text body under a 2 MiB cap. Text must decode as UTF-8, be nonempty, contain no null bytes, and remain under 500,000 characters. Original bytes receive random private storage keys and SHA-256 checksums, verified by the worker before extraction. Byte-identical duplicates in a collection are rejected. Each document has at most 5,000 bounded passages; extracted-text offsets and line mappings are retained. There is no PDF parser or embedding operation in this build.
+Claims and claim revisions persist independently of investigations. Investigations pin the claim revision, source manifest, collection revision, adapter configuration, embedding profile, and analysis version. Findings require an in-context passage ID and exact quotation. Reviews use optimistic revisions and append review events.
 
-The worker claims queued or expired running jobs using `FOR UPDATE SKIP LOCKED` in a short transaction. It processes outside that lock and publishes in a transaction guarded by its unique lease token, lease expiry, source state, and collection revision. Work is at least once, not exactly once. Fixture/text jobs are deliberately short and do not renew leases yet. Retries are limited to three claims and a 180-second window from creation. Deterministic fixture/validation failures are terminal.
+## Ingestion and parsing
 
-Publication, review, deletion, and cancellation use collection-first locking, followed by job/run locks, to serialize consequential state changes. A stale worker cannot publish after another attempt takes its lease. Cancellation prevents publication. Source deletion tombstones first, invalidates old investigations, and queues physical/content cleanup. Cleanup cannot be cancelled.
+Upload requests stream into a capped buffer with a 60-second receive deadline, validate type/size, and persist the original and ingestion job. PDF extraction runs outside API/worker logic. macOS uses a network-disabled, read-only parser container with a single read-only input mount and CPU/memory/process limits. Linux uses an isolated Python subprocess with a secret-free environment and OS CPU/address-space/file limits; app containers add outer filesystem, capability, memory, and process restrictions.
 
-## Evidence and review
+The parser emits text per physical page and extraction warnings. Encrypted, malformed, empty/scanned, over-page, over-text, resource-exhausted, and timed-out files produce recoverable job errors. Extracted text is chunked within page boundaries at at most 3,000 characters per passage. Embeddings are validated before passages/index rows publish in one transaction.
 
-The fixture adapter only accepts checksummed original synthetic reports and three exact case-insensitive claim scenarios. It selects known source passages, returning exact offsets and predefined interpretations. The worker validates passage scope and quote equality before any finding is published. This verifies citation mechanics; it does not demonstrate real semantic retrieval, extraction, or model quality.
+Linux subprocess isolation limits resources and inherited secrets; it is not a separate network namespace. The macOS parser and full Docker app paths were exercised. Arbitrary parser exploitation is not proven impossible.
 
-Reviews preserve immutable fixture interpretations while storing decision/note changes and append-only review events. Optimistic revisions reject stale updates. Investigations retain their original claim, source checksum manifest, excluded source list, and analysis version. Changed source collections make prior investigations stale.
+## Retrieval and models
 
-Markdown exports are generated synchronously under the source/review lock, using an expected review revision. Accepted evidence is included by default; drafts explicitly include unreviewed evidence and carry a draft label. Citations contain exact excerpts, line references, local links, source hashes, run identifiers, and review provenance. No stored export artifact exists yet.
+Embedding profiles fingerprint provider, endpoint, model, dimensions, distance, and chunking version. Vectors from different profiles never mix. An explicit reindex job atomically publishes the requested generation while old profiles remain traceable. An investigation fails with an actionable index/configuration error rather than using an incompatible index.
 
-## Decisions
+Retrieval scopes both vector and keyword queries to the pinned collection/source set. Exact cosine search and PostgreSQL full-text matching each return at most 40 candidates; reciprocal-rank fusion selects at most 12 passages, with at most three per source and a conservative byte-based context cap. Exact search suits v1's bounded local corpus; approximate indexing is not claimed. Retrieval hits and context membership persist for inspection.
 
-- **Local scope:** one installation principal, no signup/account system or public hosting.
-- **One repository, cohesive modules:** one frontend, API, and worker; no microservice split.
-- **PostgreSQL first:** database-backed jobs and real persistence; no SQLite substitute. pgvector belongs to the live retrieval milestone.
-- **Fixture first:** validate the application workflow without keys while labeling its limited AI coverage everywhere.
-- **Streaming raw text upload:** a small contract change from proposed multipart to cap bytes before spooling. PDF ingestion is deferred.
-- **On-demand Markdown:** bounded generation from a locked snapshot; persistent exports/version management belong to later milestones.
-- **Separate UI and API:** Next.js presents and proxies; FastAPI owns policy, validation, persistence, and evidence logic.
+Generation adapters cover OpenAI Responses, strict-schema compatible chat, and Ollama chat. Embedding adapters are separate. Model text cannot invoke tools. Deterministic validation rejects wrong IDs, invented quotes, inconsistent evidence/outcome combinations, bad dimensions, nonfinite vectors, refusals, and incomplete responses. One schema/evidence repair is allowed. HTTP requests have response caps, timeout, bounded retries, no redirect following, and no environment-proxy inheritance.
 
-## Future acceptance work
+No live model has been accepted in this environment. Fixture mode uses hashed lexical demo vectors and predefined Harbor interpretations; it deliberately refuses arbitrary-document analysis.
 
-PDF versions/pages and restricted parser execution; source replacement/reprocessing generations; embedding profile/index lifecycle; measured keyword/vector retrieval; generation/embedding capability adapters; provider deadlines and renewed job leases; evaluation baselines and held-out thresholds; stored export revisions; performance measurements; and hosted identity only if separately requested.
+## Durable jobs
 
-Component choices were checked against [FastAPI](https://fastapi.tiangolo.com/tutorial/background-tasks/), [PostgreSQL locking](https://www.postgresql.org/docs/current/sql-select.html), [SQLAlchemy PostgreSQL support](https://docs.sqlalchemy.org/en/20/dialects/postgresql.html), and [Next.js rewrites](https://nextjs.org/docs/app/api-reference/config/next-config-js/rewrites). These references describe component behavior, not application verification.
+Jobs include ingestion, investigation, reindex, claim suggestions, provider checks, exports, and deletion. Claiming uses row locks with SKIP LOCKED, renewed leases, fencing tokens, a maximum of three attempts, persisted stages, first-start deadlines, cancellation, and bounded provider-call budgets across retries. Publication rechecks the lease and collection/source state. Unexpected crashes leave leased work for recovery rather than silently losing it.
+
+Export creation locks and validates a specific review revision, stores a frozen snapshot, and queues Markdown rendering. Downloads verify the artifact checksum, source validity, ownership, and export state. Later review changes do not rewrite an existing snapshot; source changes invalidate download access. The old direct Markdown route remains deprecated for compatibility.
+
+Deletion first tombstones records, cancels affected jobs, and invalidates exports. Cleanup removes originals, vectors, passages, source-dependent findings/reviews, suggestions, retrieval traces, and export snapshots/artifacts. Collection deletion also clears analyst claims/revisions. Expired orphan files and parser directories are swept. Cleanup failures remain inspectable/retryable. Database tombstones, hashes, configuration, and numeric operational metadata can remain; downloaded files and backups require separate retention.
+
+## Frontend and deployment
+
+OpenAPI generates frontend response types. PDF.js uses same-origin worker/fonts/maps, page controls, bounded canvas/image sizes, disabled XFA/Wasm, and text-only extracted citations. React never inserts document/model HTML. Completed jobs stop frequent polling; idle refresh and tab visibility/focus keep the reading room current.
+
+Docker uses pinned base-image digests, an external database volume, a shared private artifact bind mount, unprivileged application users, read-only app filesystems, and loopback published ports. The database initializer installs vector as administrator; the app role owns only its databases. Production hosting would require a separate identity, network, secrets, backup, and runtime-role design.

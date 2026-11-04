@@ -1,41 +1,57 @@
-# Verification of the first implementation slice
+# Local v1 verification
 
-Run date: 5 November 2026, Asia/Karachi. These results describe this checkout and local environment, not unexecuted CI or a completed v1 release.
+Verified 5 November 2026, Asia/Karachi. This records executed local checks for the v1 candidate. Live model acceptance remains pending.
 
 ## Environment
 
-- macOS, Node.js 22.11.0, npm 10.9.0, Python 3.12.14.
-- Dedicated development and test databases on existing PostgreSQL 14.15. No existing application database/role was altered.
-- Next.js 16.4.5, React 19.3.1, FastAPI 0.162.0, SQLAlchemy 2.1.8, Alembic 1.20.1, psycopg 3.3.8.
-- No API keys or live model calls. Fixture mode only. The local PostgreSQL installation has no pgvector extension; no vector behavior is claimed tested.
+macOS15.8.1 x86_64, Python3.12.14, bundled Node24.19.0, Next16.4.5, React19.3.1, PDF.js6.5.438, pypdf6.21.4, PostgreSQL17 and pgvector0.8.7. The source launcher used UI3001/API8001 and a synthetic browser database. Full Docker verification used separate UI3100/API8100/DB55433, a fresh external test volume, and a private test artifact directory. Existing user processes and the original PostgreSQL14 database were preserved.
 
-## Passed
+## Executed checks
 
-- **27 backend tests** against real PostgreSQL, through FastAPI's test client. This includes the complete fixture source/review/export flow; supported/conflicting/insufficient scenarios; honest custom-input failure; owner/collection/direct-ID checks; idempotency and stale review conflicts; explicit partial coverage; immediate deletion revocation and cleanup; queued/running cancellation and retry; expired-lease fencing; invalid quote rejection; upload limits/encoding/type checks; Host/Origin restrictions; pagination; preserved source bytes and checksum integrity; and the concurrent publication regression described below.
-- **Alembic schema check:** no new upgrade operations detected after applying the committed initial migration to the dedicated test database.
-- **TypeScript checks** and a **Next.js production build**, including generated source-response types.
-- **OpenAPI generation:** emitted backend schema and generated frontend declarations; CI is configured to detect contract drift.
-- **Real HTTP workflow through Next.js's API proxy:** sample creation → four separate worker ingestion jobs → PostgreSQL-backed investigation → exact source citation lookup → accepted review/note → reviewed Markdown response. An actual exported example is in [example-brief.md](example-brief.md).
-- **Restart persistence:** API, worker, and frontend were stopped and restarted through the launcher; the existing investigation, findings, and accepted review revision remained available. Cleanup of the earlier smoke-test collection completed.
-- **Frontend production dependency audit:** `npm audit --omit=dev --audit-level=high` reported zero known vulnerabilities.
-- **Python dependency consistency:** `pip check` reported no broken requirements. PyPI release metadata listed zero advisories across the 28 locked packages at check time; see [python-advisories.json](python-advisories.json). This metadata check is not a complete security audit.
+- **60 backend tests passed** in41.71s against actual PostgreSQL/pgvector. Coverage includes PDF pages/warnings/rejections, byte integrity, immutable versions/restoration, hybrid retrieval and profile reindexing, scoped/direct-ID access, exact citations, claim revisions, review/export snapshots, cancellation, heartbeat/lease recovery, provider budgets/refusal/schema repair, cleanup/orphans, and excluded-source metadata deletion.
+- **Alembic upgrade and schema check passed:** no new upgrade operations detected. Both an empty database and a copy of the previous application database were migrated. A private pre-upgrade SQL backup is retained in ignored .local/backups/pre-v1-backup.sql.
+- **OpenAPI generation/drift and TypeScript checks passed.** The final source and Docker production builds passed with the pinned lockfiles.
+- **Text and PDF browser workflows passed** on both source-run services and the full Docker stack. Tests cover ingestion, known conflict, exact source navigation, accepted review, saved Markdown download, reload persistence, insufficient evidence, hostile text rendering, PDF canvas pixels, suggestions requiring confirmation, page navigation, replacement/retained-version activation, mobile overflow, and keyboard tabs.
+- **Automated accessibility scans passed with zero violations** for the representative evidence board and mobile PDF reader, using axe WCAG2A/AA and2.1AA tags. This is a bounded automated scan, not comprehensive accessibility certification. Actual desktop/mobile screenshots were captured and visually inspected.
+- **Fresh full Docker installation passed:** database initialization/vector extension, migrations, unprivileged API/worker/web, read-only app filesystems, capability restrictions, ready health check, PDF extraction, browser review/export, and the six-case fixture suite. No provider credentials or Docker socket enter the parser/app images.
+- **Container restart persistence passed:** a confirmed claim, accepted finding/note, and saved export checksum survived API/worker/UI restart. The temporary verification collection was then deleted.
+- **Dependency checks passed:** pip check found no broken requirements; pip-audit2.10.1 found no known advisories in33 pinned Python runtime/development packages; npm audit found zero vulnerabilities across the locked frontend dependency graph. Bandit1.9.4 reported zero medium/high findings. The narrow tmpfs-path suppression is explained inline; reviewed low-level subprocess use supplies argument arrays without a shell.
+- **Secret-pattern scan passed** over staged/tracked text with no matches. It checks common private-key/OpenAI/GitHub/AWS forms without printing values; it is not a guarantee that all possible secret formats are detected. Runtime files, .env, backups, originals, and build/dependency directories are ignored.
+- **License inventory generated:**33 Python distributions and109 npm lock entries, including optional platforms. Dependency notices remain with their distributions; no project-wide license has been chosen.
 
-The backend test run emits one upstream warning: Starlette deprecates its httpx-based test client in favor of httpx2. The 27 tests pass; this warning is recorded rather than suppressed.
+The backend suite emits one upstream Starlette warning about its deprecated httpx-based test client; it is recorded rather than hidden.
 
-## Reproduced defect and fix
+## Measured fixture results
 
-The initial real HTTP run caught a READ COMMITTED/identity-map timing issue: a response could contain a previously loaded investigation with no outcome alongside newly committed successful job state and findings. The investigation read now serializes against publication/deletion and refreshes the loaded run under that boundary. A deterministic regression publishes from a separate worker transaction between reads and verifies a consistent final response. The subsequent real HTTP workflow passed.
+[evaluation-fixture.json](evaluation-fixture.json) and [evaluation-docker.json](evaluation-docker.json) each passed six cases: three known claims against text and PDF versions. Both record6/6 expected outcomes, six exact citations, all six cases passing citation validation, and1.0 labeled passage/evidence recall within context. These are predefined synthetic regression scenarios; they do not measure live semantic model quality or generalization.
 
-Final review also fixed and regression-tested these cases: deleting one source no longer cancels unrelated ingestion; a cancelled running ingestion recovered after lease expiry becomes retryable; failed deletion cleanup can be retried without restoring source access; and originals are preserved byte-for-byte with integrity verification before extraction.
+The source-run investigation median/max were655.5/906ms; the Docker suite median/max were632/902ms. These include API polling and a single worker.
 
-## Blocked or not executed
+[performance-fixture.json](performance-fixture.json) separately measured eight warm text investigations per concurrency, with one FIFO worker and100ms polling. At concurrency1 the end-to-end median/p95 were722/1017ms and queue median/p95 were431/514ms. At concurrency4 they were941/1184ms and593.5/980ms. With n=8, p95 is the maximum. This tiny fixture workload does not establish large-PDF, live-provider, endurance, or production capacity. [resources-local.json](resources-local.json) is a post-benchmark startup/readiness snapshot, not peak or steady-state resource usage.
 
-- **Browser E2E, responsive screenshots, keyboard/visual accessibility:** Chrome launched under Playwright but the desktop sandbox aborted the browser before a page opened. The supplied `apps/web/e2e.mjs` did not complete. No screenshots or browser pass results are claimed. The frontend HTTP response was 200 and the production build passed, which do not substitute for browser acceptance.
-- **Docker Compose clean install:** Docker's socket was not available in the initial environment. The Compose recipe was written but not executed; verification used dedicated databases on the installed PostgreSQL server. The application launcher was exercised locally.
-- **Development hot reload in this sandbox:** the default Turbopack development server reported `unable to start FSEvent stream` after startup. Production build/start worked. The README therefore uses the verified `--production` launcher path; development file watching must be checked outside this sandbox.
-- **GitHub Actions:** workflow supplied, not executed on GitHub. No remote or push exists.
-- **Live providers, semantic retrieval/embeddings, model variability, numeric AI quality gates, performance percentiles, full dependency/license/secret scanning, and public deployment:** not executed and not release-accepted.
+The human-labeled new-source split in fixtures/evaluation.json covers five additional support/conflict/unanswerable/period/injection cases. It has not been scored with a live model.
 
-## Reproduce
+## Defects reproduced and corrected
 
-Use the commands and dedicated-test-database guard in the root README. Start the app/worker before `npm run test:e2e`; use Playwright Chromium or set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to an available Chrome binary. Browser acceptance and the clean-install path remain required before declaring M0–M2 fully accepted.
+Verification exposed overly restrictive AND keyword matching, low-contrast labels, a CSS class collision in the context group, inactive-tab keyboard navigation, PDF blank-page selection, completed-job polling, retained-version recovery access, and stale excluded-source filenames in export snapshots. The implementation and relevant regression checks were updated. Source deletion now purges snapshots whether a removed source was included or explicitly excluded from the investigation.
+
+## Reproduce browser verification
+
+Use the source commands in README, or run the full Docker stack. On Docker Desktop, the browser harness can reach the full app's configured loopback origin through an internal test-only proxy:
+
+```bash
+docker run --rm --memory 1536m --cpus 2 --pids-limit 256 --shm-size 256m \
+  --cap-drop ALL --security-opt no-new-privileges \
+  -v "$PWD:/app:ro" -v "$PWD/docs/screenshots:/app/docs/screenshots:rw" \
+  -w /app/apps/web -e E2E_PROXY_PORT=3000 -e E2E_ACCESSIBILITY=1 -e E2E_EXTENDED=1 \
+  mcr.microsoft.com/playwright:v1.64.1-noble@sha256:2f05f8a734509a7b3f26a912639488ee08f58a7b292d14d62271bcff9038768f \
+  node e2e-container.mjs
+```
+
+Tests create/delete their own synthetic collections. Screenshots in screenshots/ are real captures, not mockups. example-brief.md was produced through a saved reviewed PDF export; its temporary source collection was removed afterward.
+
+## Outstanding acceptance
+
+No actual OpenAI, compatible-provider, or Ollama generation/embedding request was executed. Contract tests use MockTransport and cannot establish live compatibility. [evaluation-live.json](evaluation-live.json) explicitly records blocked coverage. Configure a real provider, run capability/development checks, calibrate and freeze live quality gates, then execute the held-out split and a second real configuration when available.
+
+GitHub Actions has not run on GitHub; its pinned workflow was supplied for a future push. No remote, public hosting, or hosted authentication was created. The source-run development watcher was not reaccepted in this sandbox; production build/start is the verified path. Temporary verification servers are shut down after checks.

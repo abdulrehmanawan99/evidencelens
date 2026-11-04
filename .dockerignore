@@ -1,0 +1,15 @@
+.git
+.env
+.env.*
+.local
+.venv
+**/node_modules
+**/.next*
+**/__pycache__
+**/.pytest_cache
+**/*.tsbuildinfo
+apps/web/public/pdf-assets
+apps/web/public/pdf.worker.min.mjs
+docs/screenshots
+work
+outputs

@@ -1,5 +1,6 @@
 """Original synthetic reports. No external or confidential source material."""
 from hashlib import sha256
+from pathlib import Path
 
 SOURCES = [
     ("Operations report — Q2.txt", "HARBOR TRANSIT / OPERATIONS REPORT\nPublished 12 July 2026. Final Q2 operating figures.\n\nQ2 ridership was 1.20 million journeys across the Harbor Transit network.\nThis covers all routes from 1 April through 30 June 2026.\n\nService reliability improved during the quarter. These figures are final.\n"),
@@ -9,6 +10,11 @@ SOURCES = [
 ]
 CLAIMS = ["Harbor Transit recorded 1.20 million journeys in Q2.", "Harbor Transit had a 20% profit margin in Q2.", "Harbor Transit recorded 1.20 million journeys in Q3."]
 CHECKSUMS = {sha256(text.encode()).hexdigest(): i for i, (_, text) in enumerate(SOURCES)}
+PDF_DIRECTORY = Path(__file__).resolve().parents[2] / "fixtures" / "pdf"
+for index in range(len(SOURCES)):
+    path = PDF_DIRECTORY / f"{index+1}.pdf"
+    if path.exists():
+        CHECKSUMS[sha256(path.read_bytes()).hexdigest()] = index
 
 
 class FixtureUnavailable(Exception):

@@ -1,4 +1,6 @@
 import base64
+import asyncio
+import os
 from datetime import datetime
 from hashlib import sha256
 import json
@@ -12,13 +14,16 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .config import settings
 from .db import owner_dependency, session_dependency
-from .fixtures import CLAIMS, SOURCES
-from .models import Collection, Document, Finding, Investigation, Job, JobEvent, Passage, ReviewEvent, now, uid
+from .fixtures import CLAIMS, PDF_DIRECTORY, SOURCES
+from .models import Claim, ClaimRevision, Collection, Document, Export, Finding, Investigation, Job, JobEvent, Passage, ReviewEvent, now, uid
+from .providers import ProviderError, configuration
+from .retrieval import index_status
+from .exporting import make_snapshot, render_markdown
 from .schemas import CollectionInput, CollectionOut, DocumentOut, InvestigationInput, InvestigationOut, JobOut, ReviewInput, SourceOut
 from .services import add_job, collection_for, document_dict, document_for, fail, invalidate_runs, investigation_for, job_dict, job_for, run_dict, store_text
 
-app = FastAPI(title="EvidenceLens", version="0.1.0", description="Private local fixture workflow. Live AI and PDFs are not yet implemented.")
-app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "testserver"])
+app = FastAPI(title="EvidenceLens", version="1.0.0", description="Private, source-grounded PDF/text investigations with explicit fixture and live-provider modes.")
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts.split(","))
 DB = Depends(session_dependency)
 Owner = Depends(owner_dependency)
 
@@ -27,7 +32,7 @@ Owner = Depends(owner_dependency)
 async def local_boundary(request: Request, call_next):
     request_id = uid()
     origin = request.headers.get("origin")
-    allowed = {settings.app_origin, "http://127.0.0.1:8000"}
+    allowed = {settings.app_origin, os.getenv("API_ORIGIN", "http://127.0.0.1:8000")}
     if origin and origin not in allowed:
         return JSONResponse(status_code=403, content={"detail": {"code": "origin_rejected", "message": "Only the configured local app origin is allowed."}})
     if request.headers.get("sec-fetch-site") == "cross-site":
@@ -55,7 +60,7 @@ def page_result(rows, limit, serialize):
 
 
 def collection_dict(session, collection):
-    counts = dict(session.execute(select(Document.state, func.count()).where(Document.collection_id == collection.id, Document.deleted.is_(False)).group_by(Document.state)).all())
+    counts = dict(session.execute(select(Document.state, func.count()).where(Document.collection_id == collection.id, Document.deleted.is_(False), Document.active.is_(True)).group_by(Document.state)).all())
     return {"id": collection.id, "title": collection.title, "revision": collection.revision, "created_at": collection.created_at.isoformat(), "document_count": sum(counts.values()), "ready_count": counts.get("ready", 0)}
 
 
@@ -70,12 +75,17 @@ def ready(session: SASession = DB):
         session.execute(text("SELECT 1 FROM collections LIMIT 1"))
     except Exception:
         return JSONResponse(status_code=503, content={"status": "not_ready", "code": "database_or_migrations_unavailable"})
-    return {"status": "ready", "mode": "fixture"}
+    return {"status": "ready", "mode": settings.model_mode}
 
 
 @app.get("/api/v1/provider-status")
 def provider_status():
-    return {"mode": "fixture", "provider": "harbor-fixture-v1", "live_enabled": False, "supported_claims": CLAIMS, "message": "Predefined synthetic scenarios. No live model calls or semantic search.", "accepted_types": ["text/plain"], "max_upload_bytes": settings.max_upload}
+    try:
+        config, error = configuration(), None
+    except ProviderError as exc:
+        config, error = {}, exc.code
+    fixture = settings.model_mode == "fixture"
+    return {"mode": settings.model_mode, "provider": config.get("generation_model", "unconfigured"), "live_enabled": not fixture and not error, "configured": not error, "configuration_error": error, "embedding": config.get("embedding"), "supported_claims": CLAIMS if fixture else [], "message": "Predefined synthetic scenarios with a lexical demo index; no live model calls." if fixture else "Document excerpts are sent to the server-configured provider. Results require review.", "accepted_types": ["text/plain", "application/pdf"], "max_upload_bytes": settings.max_upload}
 
 
 @app.get("/api/v1/collections")
@@ -93,14 +103,15 @@ def create_collection(body: CollectionInput, session: SASession = DB, owner: str
 
 
 @app.post("/api/v1/sample", status_code=201, response_model=CollectionOut)
-def sample(session: SASession = DB, owner: str = Owner):
-    collection = Collection(title="Harbor Transit · Q2 review", owner=owner)
+def sample(format: str = Query(default="txt", pattern="^(txt|pdf)$"), session: SASession = DB, owner: str = Owner):
+    collection = Collection(title="Harbor Transit · Q2 review"+(" · PDF" if format == "pdf" else ""), owner=owner)
     session.add(collection)
     session.flush()
     paths = []
     try:
-        for filename, content in SOURCES:
-            _, _, path = store_text(session, collection, filename, content.encode())
+        for index, (filename, content) in enumerate(SOURCES, 1):
+            data = (PDF_DIRECTORY / f"{index}.pdf").read_bytes() if format == "pdf" else content.encode()
+            _, _, path = store_text(session, collection, filename.removesuffix(".txt")+".pdf" if format == "pdf" else filename, data)
             paths.append(path)
         session.commit()
     except Exception:
@@ -127,7 +138,7 @@ def rename_collection(collection_id: str, body: CollectionInput, session: SASess
 @app.get("/api/v1/collections/{collection_id}/documents")
 def documents(collection_id: str, session: SASession = DB, owner: str = Owner):
     collection_for(session, collection_id, owner)
-    docs = session.scalars(select(Document).where(Document.collection_id == collection_id, Document.deleted.is_(False)).order_by(Document.created_at, Document.id).limit(25))
+    docs = session.scalars(select(Document).where(Document.collection_id == collection_id, Document.deleted.is_(False), Document.active.is_(True)).order_by(Document.created_at, Document.id).limit(25))
     return {"items": [document_dict(session, doc) for doc in docs], "next_cursor": None}
 
 
@@ -136,13 +147,17 @@ async def upload(collection_id: str, request: Request, x_filename: str = Header(
     # Stream the raw file body; this avoids an unbounded multipart spool before validation.
     collection = collection_for(session, collection_id, owner)
     content_type = request.headers.get("content-type", "").split(";", 1)[0]
-    if content_type not in {"text/plain", "application/octet-stream"}:
-        fail(415, "unsupported_type", "Only UTF-8 .txt files are supported in this slice.")
+    if content_type not in {"text/plain", "application/pdf", "application/octet-stream"}:
+        fail(415, "unsupported_type", "Upload a UTF-8 .txt file or a text-based PDF.")
     data = bytearray()
-    async for chunk in request.stream():
-        data.extend(chunk)
-        if len(data) > settings.max_upload:
-            fail(413, "upload_too_large", "Text files must be 2 MiB or smaller.")
+    try:
+        async with asyncio.timeout(60):
+            async for chunk in request.stream():
+                if len(data)+len(chunk) > settings.max_upload:
+                    fail(413, "upload_too_large", "Files must be 20 MiB or smaller.")
+                data.extend(chunk)
+    except TimeoutError:
+        fail(408, "upload_timeout", "The upload exceeded its 60-second receive window.")
     collection = collection_for(session, collection_id, owner, lock=True)
     path = None
     try:
@@ -162,17 +177,25 @@ def get_document(document_id: str, session: SASession = DB, owner: str = Owner):
 
 
 @app.get("/api/v1/documents/{document_id}/source", response_model=SourceOut)
-def source(document_id: str, after: int = Query(-1, ge=-1), passage_id: str | None = None, session: SASession = DB, owner: str = Owner):
+def source(document_id: str, after: int = Query(-1, ge=-1), passage_id: str | None = None, page: int | None = Query(default=None, ge=1, le=100), session: SASession = DB, owner: str = Owner):
     doc = document_for(session, document_id, owner, lock=True)
+    if page is None and doc.media_type == "application/pdf":
+        page = 1
     if passage_id:
         target = session.scalar(select(Passage).where(Passage.id == passage_id, Passage.document_id == doc.id))
         if not target:
             fail(404, "not_found", "This passage is unavailable.")
         after = target.ordinal - 1
-    passages = list(session.scalars(select(Passage).where(Passage.document_id == doc.id, Passage.ordinal > after).order_by(Passage.ordinal).limit(101)))
+        page = target.page_number
+    query = select(Passage).where(Passage.document_id == doc.id, Passage.ordinal > after)
+    if page is not None:
+        if page > doc.page_count:
+            fail(422, "invalid_page", "This page is outside the source document.")
+        query = query.where(Passage.page_number == page)
+    passages = list(session.scalars(query.order_by(Passage.ordinal).limit(101)))
     more = len(passages) > 100
     passages = passages[:100]
-    return {"document": document_dict(session, doc), "passages": [{k: getattr(p, k) for k in ["id", "text", "line_start", "line_end", "start_offset", "ordinal"]} for p in passages], "next_after": passages[-1].ordinal if more else None}
+    return {"document": document_dict(session, doc), "page_number": page or 1, "passages": [{k: getattr(p, k) for k in ["id", "text", "line_start", "line_end", "start_offset", "ordinal", "page_number"]} for p in passages], "next_after": passages[-1].ordinal if more else None}
 
 
 @app.post("/api/v1/documents/{document_id}/retry", status_code=202, response_model=JobOut)
@@ -193,7 +216,11 @@ def tombstone(session, collection, docs):
         doc.deleted = True
     collection.revision += 1
     invalidate_runs(session, collection.id)
-    for job in session.scalars(select(Job).where(Job.collection_id == collection.id, Job.kind.in_(["ingest", "investigate"]), Job.state.in_(["queued", "running"]))):
+    for old in session.scalars(select(Job).where(Job.collection_id == collection.id, Job.kind == "claims")):
+        old.result_payload = None
+    for job in session.scalars(select(Job).where(Job.collection_id == collection.id, Job.state.in_(["queued", "running"]))):
+        if job.kind.startswith("delete"):
+            continue
         if job.kind == "ingest" and job.resource_id not in affected_ids:
             continue
         job.cancel_requested = True
@@ -207,7 +234,8 @@ def tombstone(session, collection, docs):
 def delete_document(document_id: str, session: SASession = DB, owner: str = Owner):
     doc = document_for(session, document_id, owner, lock=True)
     collection = collection_for(session, doc.collection_id, owner)
-    tombstone(session, collection, [doc])
+    versions = list(session.scalars(select(Document).where(Document.family_id == doc.family_id, Document.collection_id == doc.collection_id, Document.deleted.is_(False))))
+    tombstone(session, collection, versions)
     job = add_job(session, collection.id, "delete_document", doc.id, doc.id)
     session.commit()
     return job_dict(job)
@@ -234,7 +262,11 @@ def investigate(collection_id: str, body: InvestigationInput, idempotency_key: s
             if old.request_hash != request_hash:
                 fail(409, "idempotency_conflict", "That idempotency key was used with a different request.")
             return {"id": old.resource_id, "job": job_dict(old)}
-    docs = list(session.scalars(select(Document).where(Document.collection_id == collection.id, Document.deleted.is_(False))))
+    try:
+        config = configuration()
+    except ProviderError as exc:
+        fail(503, exc.code, "Configure and check the selected model and embedding providers before analysis.")
+    docs = list(session.scalars(select(Document).where(Document.collection_id == collection.id, Document.deleted.is_(False), Document.active.is_(True))))
     included = [d for d in docs if d.state == "ready"]
     excluded = [d for d in docs if d.state != "ready"]
     if excluded and not body.allow_partial:
@@ -244,7 +276,20 @@ def investigate(collection_id: str, body: InvestigationInput, idempotency_key: s
     active = session.scalar(select(func.count()).select_from(Job).where(Job.collection_id == collection.id, Job.kind == "investigate", Job.state.in_(["queued", "running"])))
     if active >= 2:
         fail(429, "investigation_limit", "Wait for an active investigation to finish or cancel it.")
-    run = Investigation(id=uid(), collection_id=collection.id, claim=body.claim, collection_revision=collection.revision, source_manifest=[{"id": d.id, "title": d.title, "checksum": d.checksum} for d in included], excluded_sources=[{"id": d.id, "title": d.title, "state": d.state} for d in excluded])
+    if body.claim_id:
+        confirmed_claim = session.scalar(select(Claim).where(Claim.id == body.claim_id, Claim.collection_id == collection.id))
+        if not confirmed_claim:
+            fail(404, "not_found", "This claim is unavailable.")
+        if confirmed_claim.revision != body.expected_claim_revision or confirmed_claim.text != body.claim:
+            fail(409, "claim_revision_conflict", "Reload or save the claim's current revision before investigating.")
+    else:
+        confirmed_claim = session.scalar(select(Claim).where(Claim.collection_id == collection.id, Claim.text == body.claim).order_by(Claim.created_at).limit(1))
+        if not confirmed_claim:
+            confirmed_claim = Claim(id=uid(), collection_id=collection.id, text=body.claim, revision=1)
+            session.add(confirmed_claim)
+            session.flush()
+            session.add(ClaimRevision(claim_id=confirmed_claim.id, revision=1, text=body.claim))
+    run = Investigation(id=uid(), collection_id=collection.id, claim=body.claim, claim_id=confirmed_claim.id, claim_revision=confirmed_claim.revision, collection_revision=collection.revision, configuration=config, mode=settings.model_mode, analysis_version=settings.analysis_version, source_manifest=[{"id": d.id, "title": d.title, "checksum": d.checksum, "version": d.version, "family_id": d.family_id, "media_type": d.media_type, "page_count": d.page_count, "warnings": d.warnings} for d in included], excluded_sources=[{"id": d.id, "title": d.title, "state": d.state} for d in excluded])
     session.add(run)
     session.flush()
     job = add_job(session, collection.id, "investigate", run.id, request_hash, idempotency_key)
@@ -310,6 +355,8 @@ def cancel_job(job_id: str, session: SASession = DB, owner: str = Owner):
             if job.kind == "ingest":
                 doc = session.get(Document, job.resource_id)
                 doc.state = "cancelled"
+            elif job.kind == "export":
+                session.get(Export, job.resource_id).state = "unavailable"
             session.add(JobEvent(job_id=job.id, state="cancellation_requested"))
         session.commit()
     return job_dict(job)
@@ -328,31 +375,14 @@ def retry_cleanup(job_id: str, session: SASession = DB, owner: str = Owner):
     return job_dict(job)
 
 
-def md_escape(value):
-    return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("[", "\\[").replace("]", "\\]")
-
-
-@app.get("/api/v1/investigations/{run_id}/export")
+@app.get("/api/v1/investigations/{run_id}/export", deprecated=True)
 def export(run_id: str, expected_revision: int = Query(ge=0), draft: bool = False, session: SASession = DB, owner: str = Owner):
+    # Compatibility download; the UI uses persisted export jobs/revisions.
+    from .exporting import validated_snapshot
     run = investigation_for(session, run_id, owner, lock=True)
-    result = run_dict(session, run)
-    if run.stale or run.review_revision != expected_revision:
-        fail(409, "stale_export", "Sources or review decisions changed. Reload the investigation before exporting.")
-    if result["job"]["state"] != "succeeded":
-        fail(409, "run_not_complete", "Wait for a successful investigation before exporting.")
-    accepted = [f for f in result["findings"] if f["decision"] == "accepted"]
-    if not accepted and not draft:
-        fail(409, "review_required", "Accept evidence first, or explicitly request a draft export.")
-    findings = [f for f in result["findings"] if f["decision"] != "dismissed"] if draft else accepted
-    lines = ["# EvidenceLens — cited brief", "", "**DRAFT / NOT FULLY REVIEWED**" if draft else "**Analyst-reviewed evidence**", "", "Mode: FIXTURE — synthetic sources; no live model was called.", f"Investigation: {run.id}", f"Review revision: {run.review_revision}", f"Analysis: {run.analysis_version}", f"Unreviewed findings: {sum(f['decision'] == 'unreviewed' for f in result['findings'])}", "", "## Claim", "", md_escape(run.claim), "", f"Outcome in selected sources: {run.outcome}", "", "## Evidence", ""]
-    for i, finding in enumerate(findings, 1):
-        lines += [f"### {i}. {finding['relation'].title()} — {md_escape(finding['document_title'])}", "", "> " + md_escape(finding["quote"]).replace("\n", "\n> "), "", md_escape(finding["explanation"]), "", f"Lines {finding['line_start']}–{finding['line_end']}; passage {finding['passage_id']}; review: {finding['decision']}.", "", f"[Open local source]({settings.app_origin}/?collection={run.collection_id}&document={finding['document_id']}&passage={finding['passage_id']})", ""]
-        if finding["note"]:
-            lines += ["Reviewer note: " + md_escape(finding["note"]), ""]
-    lines += ["## Source register", ""]
-    for source in run.source_manifest:
-        lines += [f"- {md_escape(source['title'])} — SHA-256: {source['checksum']}"]
-    if run.excluded_sources:
-        lines += ["", "Excluded from this run:"] + ["- " + md_escape(d["title"]) + " (" + d["state"] + ")" for d in run.excluded_sources]
-    lines += ["", "## Limitations", "", run.limitations or "", "", "Source links require this local installation and retained sources. Downloaded exports cannot be recalled by deletion. This brief reports selected document evidence, not exhaustive fact-checking.", ""]
-    return Response("\n".join(lines), media_type="text/markdown; charset=utf-8", headers={"Content-Disposition": f'attachment; filename="evidencelens-{run.id[:8]}-r{run.review_revision}.md"'})
+    snapshot = validated_snapshot(session, run, expected_revision, draft)
+    return Response(render_markdown(snapshot, settings.app_origin), media_type="text/markdown", headers={"Content-Disposition": f'attachment; filename="evidencelens-{run.id[:8]}-r{run.review_revision}.md"'})
+
+
+from .routes_v1 import router
+app.include_router(router)

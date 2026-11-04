@@ -1,18 +1,77 @@
-name: evidencelens
+name: evidencelens-v1
+x-backend: &backend
+  image: evidencelens-v1-backend:local
+  build:
+    context: .
+    dockerfile: backend/Dockerfile
+  profiles: [app]
+  env_file: .env
+  environment:
+    DATABASE_URL: postgresql+psycopg://evidencelens:evidencelens_local@db:5432/evidencelens
+    STORAGE_DIR: /artifacts
+    APP_ORIGIN: http://127.0.0.1:${APP_PORT:-3000}
+    API_ORIGIN: http://127.0.0.1:${API_PORT:-8000}
+    ALLOWED_HOSTS: 127.0.0.1,localhost,api
+    PARSER_BACKEND: subprocess
+    MODEL_MODE: ${MODEL_MODE:-fixture}
+  user: "${LOCAL_UID:-10001}:${LOCAL_GID:-10001}"
+  volumes:
+    - ${ARTIFACTS_DIR:-./.local/v1-artifacts}:/artifacts
+  read_only: true
+  tmpfs: ["/tmp:rw,noexec,nosuid,size=32m"]
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  pids_limit: 64
+  mem_limit: 768m
 services:
   db:
-    image: postgres:17
+    image: pgvector/pgvector:0.8.7-pg17@sha256:7d0a41464797aeb9862dfdc0bbf1526b82cfd324cdd8036df19e3545f4a9ccb8
+    container_name: ${DB_CONTAINER_NAME:-evidencelens-v1-db}
     environment:
       POSTGRES_PASSWORD: evidencelens_local_admin
-    ports:
-      - "127.0.0.1:55432:5432"
+    ports: ["127.0.0.1:${DB_PORT:-55432}:5432"]
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/01-evidencelens.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d evidencelens"]
-      interval: 5s
+      test: [CMD-SHELL, "pg_isready -U postgres -d evidencelens"]
+      interval: 3s
       timeout: 3s
-      retries: 10
+      retries: 20
+  api:
+    <<: *backend
+    command: [sh, -c, "python -m alembic upgrade head && exec python -m uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+    ports: ["127.0.0.1:${API_PORT:-8000}:8000"]
+    depends_on:
+      db: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health/ready', timeout=2)"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+  worker:
+    <<: *backend
+    command: [python, -m, app.worker]
+    depends_on:
+      api: {condition: service_healthy}
+  web:
+    image: evidencelens-v1-web:local
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    profiles: [app]
+    ports: ["127.0.0.1:${APP_PORT:-3000}:3000"]
+    environment:
+      NODE_ENV: production
+    depends_on:
+      api: {condition: service_healthy}
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=32m"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    mem_limit: 768m
 volumes:
   pgdata:
+    external: true
+    name: ${PGDATA_VOLUME:-evidencelens_v1_pgdata}

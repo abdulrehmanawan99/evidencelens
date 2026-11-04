@@ -4,3 +4,6 @@ alembic==1.20.1
 psycopg[binary]==3.3.8
 uvicorn==0.54.0
 pydantic==2.14.2
+httpx==0.28.1
+pypdf==6.21.4
+pgvector==0.5.1

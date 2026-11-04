@@ -1,0 +1,132 @@
+{
+  "measured_at": "2026-11-04T22:06:49.063573+00:00",
+  "mode": "fixture",
+  "host": "macOS-15.8.1-x86_64-i386-64bit",
+  "workload": "Four separate collections of four tiny synthetic text reports; one FIFO worker; eight warm investigations at each concurrency; polling every100ms. p95 with n=8 equals maximum. No live provider, large-PDF, endurance, or production capacity claim.",
+  "measurements": [
+    {
+      "concurrency": 1,
+      "samples": [
+        {
+          "end_to_end_ms": 1017,
+          "queue_wait_ms": 369,
+          "worker_ms": 429
+        },
+        {
+          "end_to_end_ms": 744,
+          "queue_wait_ms": 429,
+          "worker_ms": 156
+        },
+        {
+          "end_to_end_ms": 585,
+          "queue_wait_ms": 435,
+          "worker_ms": 116
+        },
+        {
+          "end_to_end_ms": 807,
+          "queue_wait_ms": 514,
+          "worker_ms": 153
+        },
+        {
+          "end_to_end_ms": 616,
+          "queue_wait_ms": 376,
+          "worker_ms": 139
+        },
+        {
+          "end_to_end_ms": 936,
+          "queue_wait_ms": 491,
+          "worker_ms": 346
+        },
+        {
+          "end_to_end_ms": 700,
+          "queue_wait_ms": 433,
+          "worker_ms": 120
+        },
+        {
+          "end_to_end_ms": 631,
+          "queue_wait_ms": 383,
+          "worker_ms": 117
+        }
+      ],
+      "summary": {
+        "end_to_end_ms": {
+          "median": 722.0,
+          "p95": 1017,
+          "max": 1017
+        },
+        "queue_wait_ms": {
+          "median": 431.0,
+          "p95": 514,
+          "max": 514
+        },
+        "worker_ms": {
+          "median": 146.0,
+          "p95": 429,
+          "max": 429
+        }
+      }
+    },
+    {
+      "concurrency": 4,
+      "samples": [
+        {
+          "end_to_end_ms": 550,
+          "queue_wait_ms": 390,
+          "worker_ms": 110
+        },
+        {
+          "end_to_end_ms": 1032,
+          "queue_wait_ms": 844,
+          "worker_ms": 101
+        },
+        {
+          "end_to_end_ms": 679,
+          "queue_wait_ms": 517,
+          "worker_ms": 86
+        },
+        {
+          "end_to_end_ms": 954,
+          "queue_wait_ms": 622,
+          "worker_ms": 201
+        },
+        {
+          "end_to_end_ms": 920,
+          "queue_wait_ms": 445,
+          "worker_ms": 104
+        },
+        {
+          "end_to_end_ms": 1184,
+          "queue_wait_ms": 980,
+          "worker_ms": 103
+        },
+        {
+          "end_to_end_ms": 928,
+          "queue_wait_ms": 565,
+          "worker_ms": 239
+        },
+        {
+          "end_to_end_ms": 1039,
+          "queue_wait_ms": 826,
+          "worker_ms": 138
+        }
+      ],
+      "summary": {
+        "end_to_end_ms": {
+          "median": 941.0,
+          "p95": 1184,
+          "max": 1184
+        },
+        "queue_wait_ms": {
+          "median": 593.5,
+          "p95": 980,
+          "max": 980
+        },
+        "worker_ms": {
+          "median": 107.0,
+          "p95": 239,
+          "max": 239
+        }
+      }
+    }
+  ]
+}

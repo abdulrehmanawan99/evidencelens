@@ -1,35 +1,32 @@
-# Local prototype threat model
+# Local v1 threat model
 
-Status: implemented-boundary review for the M0–M2 text/fixture slice. This is not a security certification or hosted deployment approval.
+This is an implementation review for one private OS-controlled installation. It is not a hosted deployment approval or security certification.
 
-## Assets and trust
+## Trust and assets
 
-Assets are uploaded source text, its derived passages/quotes, analyst claims and notes, local database state, and exported briefs. The logged-in OS user controls the installation and trusted configuration. Uploaded documents and returned content are untrusted. There is no live provider/key handling yet.
+Private assets include uploaded originals, extracted text, vectors, claims, notes, model interpretations, provider credentials, and exports. The OS user controls server configuration. Documents and model output are untrusted. Loopback access is not account authentication: local processes, extensions, shared-machine users with file access, and OS compromise remain outside the app boundary.
 
-Local loopback reachability is not account authentication. A malicious local process, OS compromise, browser extension, or another user with access to these files can defeat the local boundary. Do not expose either application port outside loopback.
+## Implemented controls
 
-## Controls in this slice
+- Record-ID routes check the owning collection; vector/keyword retrieval is scoped to pinned source IDs. Composite evidence references and exact quote/context validation prevent invented or cross-collection citations.
+- Exact Origin/Host policies, rejected cross-site fetches, no permissive CORS, same-origin proxying, and loopback published ports reduce browser cross-site and rebinding exposure.
+- Raw streamed uploads have byte/time/type limits; random storage keys never derive paths from filenames. Family/version/storage/page/text/passage/job/export quotas bound local work.
+- PDF parsing uses a secret-free child and resource limits. macOS's dedicated parser container has no network, read-only single input, no privileges/capabilities,512MiB memory, one CPU,32 processes,16MiB tmpfs, and a wall deadline. Linux subprocesses run inside the app container in Docker; source-run Linux isolation is weaker than a dedicated network namespace.
+- React renders source/model text as text. PDF.js uses same-origin assets, no annotation actions, disabled XFA/Wasm, and bounded pixels/images. CSP forbids external connections/objects/frames and unsafe-eval; inline Next runtime/style allowances remain.
+- Models have no tools. The prompt treats source instructions as data. IDs, exact quote offsets, relations/outcomes, structured schema, refusals, vector dimensions/norms, context/call/response limits, and one repair are enforced deterministically. This does not prove semantic prompt-injection resistance.
+- HTTP adapters use bounded response streaming, timeout/retries/deadlines, no redirects or environment proxies, and trusted server endpoint configuration. Keys remain in ignored server configuration and are excluded from parser environments, browser responses, screenshots, and logs. Full app Docker images exclude .env and runtime artifacts.
+- Lease fencing, renewed leases, cancellation, collection revisions, optimistic reviews, and locked snapshots protect against stale/duplicate publication.
 
-- **Cross-collection/direct-ID disclosure:** scoped owner/collection lookup before source, job, run, review, or export access; composite foreign keys for evidence relationships. Tests inject a second owner only through test dependency overrides. There is no runtime owner impersonation header.
-- **Cross-site writes and DNS rebinding:** allowed Host names, exact Origin allowlist, same-origin requests, rejected `Sec-Fetch-Site: cross-site`, no wildcard CORS, and loopback-only startup commands/Compose port publication.
-- **Oversized or hostile uploads:** raw streamed byte cap; UTF-8/null/empty checks; finite document and decoded-character limits; random storage keys independent of original filenames. PDF and binary formats are rejected, avoiding a parser surface not yet isolated.
-- **Stored XSS:** React text rendering; no imported HTML insertion; source/model text is never used as executable code. Security headers disable frames/objects and restrict connections to the same origin. Next.js requires inline runtime/style allowances in this prototype; its CSP is not represented as maximally strict.
-- **Prompt injection:** fixture adapter has no tools or network access and only accepts known corpus checksums. This does not prove resistance of a future live model; injection evaluation must be repeated after provider integration.
-- **Stale/duplicate work:** leases, fencing tokens, limited attempts/deadlines, cancellation checks, and transactional publication. Stale review writes and idempotency-key input mismatches return conflicts.
-- **Deletion:** immediate tombstone/access revocation and invalidated exports, followed by worker cleanup of originals, passages, source-linked findings, and review text. Late worker publication checks prevent resurrection.
-- **Secrets/data in Git:** ignored `.env`, `.local`, caches, and dependency/build directories; original fixtures are synthetic and contain no confidential source material. Known development database credentials are examples, not live secrets. Runtime originals are never a static web directory.
+## Retention and deletion
 
-## Review findings and fixes
+Deleting a source revokes all its versions immediately and invalidates prior analyses/exports. Worker cleanup removes original files, passages, vectors, retrieval hits, source-dependent findings/notes/review events, suggestion payloads, and saved export snapshots/files. Deleting a collection also clears analyst claim text/revisions. Manual claims remain when only a source is deleted.
 
-- **Source injection through citation data:** the worker validates passage collection, pinned source manifest, exact quote offsets, and quote equality before publication. An invented-quote test verifies rejection before any finding is persisted.
-- **Late worker publication:** publication requires the current unexpired token; a lease-reclaim test proves the prior worker cannot publish.
-- **Deletion race:** source access is revoked before asynchronous cleanup and existing exports are invalidated; cancellation and lease checks prevent reintroducing data.
-- **Review overwrite:** an expected revision is required; repeat stale writes return `409` and append-only review events preserve changes.
+Tombstone IDs, checksums, numeric usage/timing, model configuration, and job events may remain in PostgreSQL. Cleanup can fail; POST /api/v1/jobs/{id}/retry-cleanup retries failed deletion. Orphan files and parser directories older than the configured one-hour TTL are swept. Downloads, OS/Docker backups, SQL dumps, provider retention, and filesystem snapshots are outside app deletion. Provider calls already sent cannot be recalled; OpenAI requests specify store:false, which is not a universal zero-retention guarantee.
 
-## Remaining release work and limits
+## Review results and residual limits
 
-Browser interaction, visual accessibility, and rendering behavior remain unverified in this environment because Chrome could not launch. The browser test includes a hostile text-rendering check but has not completed. Dependency audit results and actual test commands are in `verification.md`.
+Backend tests exercise direct IDs, cross-owner/cross-collection access, deletion races, malformed/resource-limited PDFs, invented quotes, leases, provider refusal/repair, endpoint rejection, and scoped vectors. Browser checks exercise hostile text rendering, actual PDF canvas output, review/export/version workflows, keyboard tabs, and automated WCAG checks.
 
-The Docker recipe and GitHub workflow are supplied but unexecuted here. Containers/images, action pinning, parser isolation, live-provider data handling, prompt injection, embedding scope/recall, storage quotas across all resources, backup retention, log retention, crash-orphan sweeping, and load behavior need later acceptance. A crash after original-file creation can leave an orphan; deletion jobs are bounded and can fail after their retry/deadline window. Operators can inspect job status and use `POST /api/v1/jobs/{id}/retry-cleanup` to retry failed deletion without restoring access; this prototype does not claim guaranteed erasure.
+pip-audit checks pinned runtime/development Python dependencies; npm audit checks frontend packages. Bandit has no medium/high findings after a narrow documented suppression for a private in-container tmpfs path. Low-level subprocess warnings are reviewed: commands use argument arrays, not a shell, and parser input keys are server-generated. Audit output is a dated advisory snapshot, not proof of absence of vulnerabilities.
 
-Changing `DATABASE_URL` points at another database; use a dedicated application database and role. Tests refuse database names outside `evidencelens_test_*`, but that naming guard does not replace operator care. App deletion cannot recall downloaded Markdown or user backups. Public deployment requires real authentication, CSRF/session policy, per-user/workspace authorization, hardened runtime roles, and a separate security review.
+Live model injection/quality remains unmeasured without a provider. Whole-machine disk quotas, guaranteed secure erasure, encrypted backups, provider-side retention enforcement, and public hosting are not implemented. The private local scope uses known development database credentials. Hosting requires authentication, explicit users/workspaces, runtime-role separation, deployment-specific network/SSRF policy, encrypted secret handling, rate limits, and a new review.

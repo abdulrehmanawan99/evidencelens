@@ -187,15 +187,15 @@ def test_invalid_quote_is_rejected_before_publication(client):
     c = seeded(client)
     response = client.post(f"/api/v1/collections/{c['id']}/investigations", json={"claim":CLAIMS[0]})
     claim = claim_job()
-    outcome, findings, limitations = prepare(claim)
-    findings[0]["quote"] = "Invented quotation."
+    payload = prepare(claim)
+    payload["analysis"][1][0]["quote"] = "Invented quotation."
     with pytest.raises(ValueError, match="invalid_evidence"):
-        finish(claim, (outcome, findings, limitations))
+        finish(claim, payload)
     with Session() as session:
         assert session.scalar(select(func.count()).select_from(Finding)) == 0
 
 
-@pytest.mark.parametrize("filename,content,status", [("scan.pdf",b"%PDF-1.7",415),("bad.txt",b"\xff\xfe",422),("empty.txt",b" ",422),("null.txt",b"bad\x00data",422),("big.txt",b"x"*2_097_153,413)])
+@pytest.mark.parametrize("filename,content,status", [("fake.pdf",b"not a PDF",415),("bad.txt",b"\xff\xfe",422),("empty.txt",b" ",422),("null.txt",b"bad\x00data",422),("big.txt",b"x"*2_097_153,413)])
 def test_upload_validation(client, filename, content, status):
     c = client.post("/api/v1/collections",json={"title":"Test"}).json()
     response = client.post(f"/api/v1/collections/{c['id']}/documents", content=content, headers={"Content-Type":"text/plain","X-Filename":filename})

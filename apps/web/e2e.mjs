@@ -1,5 +1,6 @@
 import { chromium, expect } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
+import AxeBuilder from "@axe-core/playwright";
 
 // Requires a running API, worker, migrated database, and built frontend.
 const browser = await chromium.launch({
@@ -8,7 +9,8 @@ const browser = await chromium.launch({
     : {}),
   headless: true,
 });
-const page = await browser.newPage({ viewport: { width: 1440, height: 1080 } });
+const context = await browser.newContext({ viewport: { width: 1440, height: 1080 }, timezoneId: "Asia/Karachi" });
+const page = await context.newPage();
 const errors = [];
 page.on("pageerror", (e) => errors.push(e.message));
 const base = process.env.E2E_BASE_URL || "http://127.0.0.1:3000";
@@ -20,7 +22,7 @@ try {
   ).toBeVisible();
   const created = page.waitForResponse(
     (r) =>
-      r.url().endsWith("/api/v1/sample") && r.request().method() === "POST",
+      new URL(r.url()).pathname.endsWith("/api/v1/sample") && r.request().method() === "POST",
   );
   await page.getByRole("button", { name: "Open sample collection" }).click();
   collectionId = (await (await created).json()).id;
@@ -48,6 +50,11 @@ try {
     path: "../../docs/screenshots/evidence-board.png",
     fullPage: true,
   });
+  if (process.env.E2E_ACCESSIBILITY === "1") {
+    const accessibility = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa"]).analyze();
+    await (await import("node:fs/promises")).writeFile("../../docs/screenshots/accessibility-evidence.json", JSON.stringify(accessibility.violations, null, 2));
+    expect(accessibility.violations.map(v => ({ id: v.id, impact: v.impact, nodes: v.nodes.length }))).toEqual([]);
+  }
 
   await page.getByRole("button", { name: "Read in source" }).first().click();
   await expect(page.locator("mark")).toHaveText(
@@ -97,7 +104,7 @@ try {
     page.getByRole("button", { name: "Add a source", exact: false }),
   ).toBeVisible();
   await page
-    .locator('input[type="file"]')
+    .getByLabel("Upload UTF-8 text sources", { exact: true })
     .setInputFiles({
       name: "my-note.txt",
       mimeType: "text/plain",

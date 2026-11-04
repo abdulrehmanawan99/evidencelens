@@ -1,9 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import PdfReader from "./pdf-reader";
+import { ClaimSuggestions, ExportHistory, ProviderBar, Provenance, SourceVersions } from "./components-v1";
 import {
   api,
+  ApiError,
   friendlyError,
+  waitForJob,
+  downloadArtifact,
   type Collection,
   type Document,
   type Finding,
@@ -13,6 +18,8 @@ import {
   type Provider,
   type RunSummary,
   type Source,
+  type ExportRecord,
+  type IndexStatus,
 } from "@/lib/api";
 
 const defaultClaim = "Harbor Transit recorded 1.20 million journeys in Q2.";
@@ -100,6 +107,9 @@ export default function ReadingRoom() {
   const [highlight, setHighlight] = useState<Finding | null>(null);
   const [claim, setClaim] = useState(defaultClaim);
   const [provider, setProvider] = useState<Provider | null>(null);
+  const [indexStatus, setIndexStatus] = useState<IndexStatus | null>(null);
+  const [exportRefresh, setExportRefresh] = useState(0);
+  const [reviseClaim, setReviseClaim] = useState(false);
   const [initializing, setInitializing] = useState(true);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
@@ -116,10 +126,13 @@ export default function ReadingRoom() {
   const dialog = useRef<HTMLDialogElement>(null);
   const uploadInput = useRef<HTMLInputElement>(null);
   const selected = useRef({ activeId, runId });
+  const activity = useRef(false);
+  const pagingHistory = useRef(false);
   selected.current = { activeId, runId };
   const active = collections.find((c) => c.id === activeId);
   const ready = documents.filter((d) => d.state === "ready").length;
   const activeJobs = documents.filter((d) => running(d.state));
+  activity.current = activeJobs.length > 0 || running(run?.job.state);
 
   const refreshCollections = useCallback(async () => {
     const result = await api<Page<Collection>>("/collections?limit=100");
@@ -128,16 +141,28 @@ export default function ReadingRoom() {
   }, []);
 
   const refreshRoom = useCallback(async (id: string) => {
-    const [docs, runs, collection] = await Promise.all([
+    try {
+    const [docs, runs, collection, index] = await Promise.all([
       api<Page<Document>>(`/collections/${id}/documents`),
       api<Page<RunSummary>>(`/collections/${id}/investigations`),
       api<Collection>(`/collections/${id}`),
+      api<IndexStatus>(`/collections/${id}/index-status`),
     ]);
     if (selected.current.activeId !== id) return;
     setDocuments(docs.items);
-    setHistory(runs.items);
-    setHistoryCursor(runs.next_cursor);
+    if (pagingHistory.current) setHistory(list => [...runs.items, ...list.filter(item => !runs.items.some(fresh => fresh.id === item.id))]);
+    else { setHistory(runs.items); setHistoryCursor(runs.next_cursor); }
+    setIndexStatus(index);
     setCollections((list) => list.map((c) => (c.id === id ? collection : c)));
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 404) {
+        if (selected.current.activeId === id) {
+          setCollections(list => list.filter(collection => collection.id !== id));
+          setActiveId("");
+          setNotice("This collection was removed. Choose another collection from the library.");
+        }
+      } else throw error;
+    }
   }, []);
 
   useEffect(() => {
@@ -173,12 +198,18 @@ export default function ReadingRoom() {
     setSource(null);
     setHighlight(null);
     setPartial(false);
+    setIndexStatus(null);
+    setReviseClaim(false);
+    pagingHistory.current = false;
     if (!activeId) return;
     let alive = true;
     const load = () =>
       refreshRoom(activeId).catch((e) => alive && setError(e.message));
     void load();
-    const timer = setInterval(load, 1500);
+    let lastRefresh = Date.now();
+    const timer = setInterval(() => { if (document.visibilityState === "visible" && (activity.current || Date.now() - lastRefresh > 30000)) { lastRefresh = Date.now(); void load(); } }, 1500);
+    const onFocus = () => { if (document.visibilityState === "visible") void load(); };
+    document.addEventListener("visibilitychange", onFocus);
     const params = new URLSearchParams(window.location.search);
     if (params.get("collection") === activeId && params.get("document")) {
       const passage = params.get("passage");
@@ -196,6 +227,7 @@ export default function ReadingRoom() {
     return () => {
       alive = false;
       clearInterval(timer);
+      document.removeEventListener("visibilitychange", onFocus);
     };
   }, [activeId, refreshRoom]);
 
@@ -205,19 +237,20 @@ export default function ReadingRoom() {
       return;
     }
     let alive = true;
+    let terminal = false;
     const load = () =>
       api<Investigation>(`/investigations/${runId}`)
         .then((data) => {
-          if (alive) setRun(data);
+          if (alive) { setRun(data); terminal = !running(data.job.state); }
         })
         .catch((e) => alive && setError(e.message));
     void load();
-    const timer = setInterval(load, 1200);
+    const timer = setInterval(() => { if (!terminal && document.visibilityState === "visible") void load(); }, 1200);
     return () => {
       alive = false;
       clearInterval(timer);
     };
-  }, [runId]);
+  }, [runId, active?.revision]);
 
   useEffect(() => {
     if (pendingDelete) dialog.current?.showModal();
@@ -239,9 +272,9 @@ export default function ReadingRoom() {
     }
   }
 
-  async function loadSample() {
+  async function loadSample(format: "txt" | "pdf" = "txt") {
     await act("sample", async () => {
-      const collection = await api<Collection>("/sample", { method: "POST" });
+      const collection = await api<Collection>(`/sample?format=${format}`, { method: "POST" });
       await refreshCollections();
       setActiveId(collection.id);
       setClaim(defaultClaim);
@@ -271,17 +304,17 @@ export default function ReadingRoom() {
     await act("upload", async () => {
       let uploaded = 0;
       for (const file of Array.from(files)) {
-        if (!file.name.toLowerCase().endsWith(".txt"))
+        if (!/\.(pdf|txt)$/i.test(file.name))
           throw new Error(
-            "Choose a UTF-8 .txt file. PDF support is a later milestone.",
+            "Choose a text-based PDF or UTF-8 .txt file.",
           );
-        if (file.size > (provider?.max_upload_bytes || 2097152))
-          throw new Error("Each text file must be 2 MiB or smaller.");
+        if (file.size > (provider?.max_upload_bytes || 20971520))
+          throw new Error("Each source file must be 20 MiB or smaller.");
         await api(`/collections/${id}/documents`, {
           method: "POST",
           body: file,
           headers: {
-            "Content-Type": "text/plain",
+            "Content-Type": file.name.toLowerCase().endsWith(".pdf") ? "application/pdf" : "text/plain",
             "X-Filename": encodeURIComponent(file.name),
           },
         });
@@ -289,7 +322,7 @@ export default function ReadingRoom() {
       }
       await refreshRoom(id);
       setNotice(
-        `${uploaded} source${uploaded === 1 ? "" : "s"} uploaded. You can read them when ingestion finishes. Custom-source AI analysis is not connected yet.`,
+        `${uploaded} source${uploaded === 1 ? "" : "s"} uploaded. Read them when ingestion finishes.${provider?.mode === "fixture" ? " Fixture analysis supports the sample scenarios; use live mode for arbitrary source analysis." : ""}`,
       );
     });
     if (uploadInput.current) uploadInput.current.value = "";
@@ -298,16 +331,21 @@ export default function ReadingRoom() {
   async function investigate(event: React.FormEvent) {
     event.preventDefault();
     await act("investigate", async () => {
+      let confirmed: { id: string; revision: number } | null = null;
+      if (run?.claim_id && reviseClaim && claim !== run.claim) {
+        confirmed = await api(`/claims/${run.claim_id}`, { method: "PATCH", body: JSON.stringify({ text: claim, expected_revision: run.claim_revision }) });
+      } else if (run?.claim_id && claim === run.claim) confirmed = { id: run.claim_id, revision: run.claim_revision };
       const result = await api<{ id: string }>(
         `/collections/${activeId}/investigations`,
         {
           method: "POST",
           headers: { "Idempotency-Key": crypto.randomUUID() },
-          body: JSON.stringify({ claim, allow_partial: partial }),
+          body: JSON.stringify({ claim, allow_partial: partial, ...(confirmed ? { claim_id: confirmed.id, expected_claim_revision: confirmed.revision } : {}) }),
         },
       );
       setRun(null);
       setRunId(result.id);
+      setReviseClaim(false);
       setTab("evidence");
       await refreshRoom(activeId);
     });
@@ -349,28 +387,29 @@ export default function ReadingRoom() {
   async function download(draft: boolean) {
     if (!run) return;
     await act("export", async () => {
-      const response = await fetch(
-        `/api/v1/investigations/${run.id}/export?expected_revision=${run.review_revision}&draft=${draft}`,
-      );
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(
-          data.detail?.message || "The export could not be generated.",
-        );
-      }
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = `evidencelens-${run.id.slice(0, 8)}-r${run.review_revision}.md`;
-      anchor.click();
-      URL.revokeObjectURL(url);
+      const result = await api<ExportRecord>(`/investigations/${run.id}/exports`, { method: "POST", headers: { "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify({ expected_revision: run.review_revision, draft }) });
+      await waitForJob(result.job.id);
+      await downloadArtifact(`/exports/${result.id}/download`, `evidencelens-${run.id.slice(0, 8)}-r${run.review_revision}.md`);
+      setExportRefresh(value => value + 1);
       setNotice(
         draft
-          ? "Draft brief downloaded. Unreviewed evidence is labeled."
-          : "Reviewed brief downloaded with source excerpts and provenance.",
+          ? "Draft brief saved and downloaded. Unreviewed evidence is labeled."
+          : "Reviewed brief saved and downloaded with source excerpts and frozen provenance.",
       );
     });
+  }
+
+  async function inspectPassage(id: string) {
+    await act("source", async () => {
+      const passage = await api<{ document_id: string }>(`/passages/${id}`);
+      const data = await api<Source>(`/documents/${passage.document_id}/source?passage_id=${id}`);
+      if (data.document.collection_id === selected.current.activeId) { setSource(data); setHighlight(null); setTab("sources"); }
+    });
+  }
+
+  async function sourcePage(page: number) {
+    if (!source) return;
+    await act("source", async () => { const next = await api<Source>(`/documents/${source.document.id}/source?page=${page}`); setSource(next); setHighlight(null); });
   }
 
   async function remove() {
@@ -412,11 +451,11 @@ export default function ReadingRoom() {
             <i /> Private local workspace
           </span>
           <span className="header-separator" />
-          <span className="mode-tag">FIXTURE MODE</span>
+          <span className="mode-tag">{!provider ? "CHECKING MODEL" : !provider.configured ? "MODEL SETUP REQUIRED" : provider.mode === "fixture" ? "FIXTURE MODE" : "LIVE MODE"}</span>
           <button
             className="icon-button"
-            aria-label="Show fixture limitations"
-            title="About fixture mode"
+            aria-label="Show provider limitations"
+            title="About the selected provider"
             onClick={() =>
               setNotice(
                 provider?.message ||
@@ -520,7 +559,7 @@ export default function ReadingRoom() {
             <button
               className="text-button"
               disabled={!!busy}
-              onClick={loadSample}
+              onClick={() => loadSample()}
             >
               {busy === "sample"
                 ? "Preparing reports…"
@@ -528,10 +567,11 @@ export default function ReadingRoom() {
               <Icon name="arrow" size={15} />
             </button>
           </div>
-          <div className="library-footer">
+          <button className="text-button pdf-sample-button" disabled={!!busy} onClick={() => loadSample("pdf")}>Open PDF sample</button>
+<div className="library-footer">
             <span className="tiny-lens">EL</span>
             <div>
-              Local by design<small>Sources stay in this installation.</small>
+              Local by design<small>Original files are stored locally.</small>
             </div>
           </div>
         </aside>
@@ -583,7 +623,7 @@ export default function ReadingRoom() {
                 <button
                   className="button primary"
                   disabled={!!busy}
-                  onClick={loadSample}
+                  onClick={() => loadSample()}
                 >
                   Explore the sample <Icon name="arrow" />
                 </button>
@@ -609,8 +649,7 @@ export default function ReadingRoom() {
                 </div>
               </div>
               <p className="fixture-footnote">
-                Current build: UTF-8 text uploads and predefined sample
-                analysis. PDF and live model support are upcoming.
+                PDF and text sources, reviewed citations, and saved briefs. Fixture results are labeled; live mode uses your configured models.
               </p>
             </section>
           ) : (
@@ -643,7 +682,8 @@ export default function ReadingRoom() {
                   <Icon name="trash" />
                 </button>
               </div>
-              <section className="claim-desk" aria-label="Investigate a claim">
+              <ProviderBar key={activeId} provider={provider} index={indexStatus} collectionId={activeId} refresh={() => refreshRoom(activeId)} onError={setError} onNotice={setNotice} />
+<section className="claim-desk" aria-label="Investigate a claim">
                 <div className="section-label">
                   <span className="eyebrow">THE QUESTION ON YOUR DESK</span>
                   <span className="micro-label">
@@ -666,13 +706,15 @@ export default function ReadingRoom() {
                   <div className="claim-actions">
                     <span>
                       <span className="tiny-dot" />
-                      Source-backed analysis · fixture demonstration
+                      {provider?.mode === "fixture" ? "Source-backed fixture demonstration" : "Source-grounded live analysis · review required"}
                     </span>
                     <button
                       className="button primary"
                       disabled={
                         !!busy ||
                         !ready ||
+                        !provider?.configured ||
+                        !indexStatus?.ready ||
                         (ready < documents.length && !partial)
                       }
                     >
@@ -683,7 +725,8 @@ export default function ReadingRoom() {
                     </button>
                   </div>
                 </form>
-                {ready < documents.length && (
+                {run?.claim_id && claim !== run.claim && <label className="partial-choice"><input type="checkbox" checked={reviseClaim} onChange={event => setReviseClaim(event.target.checked)} />Save this wording as a new revision of the selected claim.</label>}
+{ready < documents.length && (
                   <label className="partial-choice">
                     <input
                       type="checkbox"
@@ -694,7 +737,7 @@ export default function ReadingRoom() {
                   </label>
                 )}
                 <details className="claim-examples">
-                  <summary>Sample claims supported in fixture mode</summary>
+                  <summary>{provider?.mode === "fixture" ? "Sample claims supported in fixture mode" : "Investigation guidance"}</summary>
                   <div>
                     {(provider?.supported_claims || [defaultClaim]).map((c) => (
                       <button key={c} onClick={() => setClaim(c)}>
@@ -704,18 +747,17 @@ export default function ReadingRoom() {
                     ))}
                   </div>
                   <p>
-                    Custom files can be uploaded and read. Custom claim analysis
-                    requires a future live provider.
+                    {provider?.mode === "fixture" ? "Fixture results cover the bundled sample scenarios. Use live mode for arbitrary sources and claims." : "Claims are checked against retrieved passages. Review every interpretation and citation."}
                   </p>
                 </details>
               </section>
 
               <div className="workspace-tabs">
-                <div role="tablist" aria-label="Workspace view">
+                <div role="tablist" aria-label="Workspace view" onKeyDown={event => { if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) { event.preventDefault(); const focused = (event.target as HTMLElement).closest('[role="tab"]')?.id; const next = event.key === "Home" ? "evidence" : event.key === "End" ? "sources" : focused === "evidence-tab" ? "sources" : "evidence"; setTab(next); document.getElementById(next + "-tab")?.focus(); } }}>
                   <button
                     role="tab"
                     id="evidence-tab"
-                    aria-selected={tab === "evidence"}
+                    aria-selected={tab === "evidence"} tabIndex={tab === "evidence" ? 0 : -1}
                     aria-controls="evidence-panel"
                     onClick={() => setTab("evidence")}
                   >
@@ -724,7 +766,7 @@ export default function ReadingRoom() {
                   <button
                     role="tab"
                     id="sources-tab"
-                    aria-selected={tab === "sources"}
+                    aria-selected={tab === "sources"} tabIndex={tab === "sources" ? 0 : -1}
                     aria-controls="sources-panel"
                     onClick={() => setTab("sources")}
                   >
@@ -742,7 +784,7 @@ export default function ReadingRoom() {
                 <input
                   ref={uploadInput}
                   type="file"
-                  accept=".txt,text/plain"
+                  accept=".pdf,.txt,application/pdf,text/plain"
                   multiple
                   className="sr-only"
                   aria-label="Upload UTF-8 text sources"
@@ -893,7 +935,7 @@ export default function ReadingRoom() {
                                 </div>
                                 {findings.map((finding) => (
                                   <FindingCard
-                                    key={`${finding.id}-${finding.revision}`}
+                          key={finding.id}
                                     finding={finding}
                                     disabled={!!busy || run.stale}
                                     inspect={() =>
@@ -908,7 +950,8 @@ export default function ReadingRoom() {
                             ) : null;
                           },
                         )}
-                        {run.limitations && (
+                        <Provenance key={run.id} run={run} inspectPassage={inspectPassage} onError={setError} />
+{run.limitations && (
                           <p className="analysis-limitations">
                             <strong>A note on this result</strong>
                             {run.limitations}
@@ -936,7 +979,7 @@ export default function ReadingRoom() {
                             disabled={doc.state !== "ready"}
                           >
                             <span>{String(index + 1).padStart(2, "0")}</span>
-                            <strong>{doc.title.replace(".txt", "")}</strong>
+                            <strong>{doc.title.replace(/\.(txt|pdf)$/i, "")}</strong>
                             <i
                               className={
                                 doc.state === "ready"
@@ -1002,6 +1045,7 @@ export default function ReadingRoom() {
                           Markdown with exact excerpts, source hashes, and
                           review provenance.
                         </small>
+<ExportHistory run={run} refreshKey={exportRefresh} onError={setError} onNotice={setNotice} />
                       </div>
                     )}
                     <div className="aside-section history">
@@ -1013,7 +1057,7 @@ export default function ReadingRoom() {
                             className={item.id === runId ? "current" : ""}
                             onClick={() => {
                               setRun(null);
-                              setRunId(item.id);
+                              setRunId(item.id); setClaim(item.claim); setReviseClaim(false);
                             }}
                           >
                             <span>
@@ -1040,6 +1084,7 @@ export default function ReadingRoom() {
                               const page = await api<Page<RunSummary>>(
                                 `/collections/${activeId}/investigations?cursor=${encodeURIComponent(historyCursor)}`,
                               );
+                              pagingHistory.current = true;
                               setHistory((list) => [...list, ...page.items]);
                               setHistoryCursor(page.next_cursor);
                             })
@@ -1070,7 +1115,7 @@ export default function ReadingRoom() {
                         <button
                           className="document-open"
                           onClick={() => inspect(doc.id)}
-                          disabled={doc.state !== "ready"}
+                          disabled={!!busy}
                         >
                           <Icon name="file" />
                           <span>
@@ -1140,7 +1185,7 @@ export default function ReadingRoom() {
                     >
                       <Icon name="upload" size={22} />
                       <strong>Add a source</strong>
-                      <span>UTF-8 .txt · up to 2 MiB</span>
+                      <span>PDF or UTF-8 .txt · up to 20 MiB</span>
                     </button>
                   </aside>
                   <div className="source-paper">
@@ -1148,13 +1193,17 @@ export default function ReadingRoom() {
                       <>
                         <div className="paper-topline">
                           <span>ORIGINAL EXTRACTED TEXT</span>
-                          <span>UTF-8 / IMMUTABLE SOURCE</span>
+                          <span>{source.document.media_type === "application/pdf" ? "PDF / IMMUTABLE VERSION" : "UTF-8 / IMMUTABLE VERSION"}</span>
                         </div>
-                        <h2>{source.document.title.replace(".txt", "")}</h2>
+                        <h2>{source.document.title.replace(/\.(txt|pdf)$/i, "")}</h2>
                         <div className="source-hash">
                           SHA-256 · {source.document.checksum.slice(0, 20)}…
                         </div>
-                        {highlight && (
+                        {source.document.state !== "ready" && <div className="inline-warning" role="status">Source processing: {source.document.state}. {source.document.error_code ? friendlyError(source.document.error_code) : "Wait for ingestion, or select a retained ready version below."}</div>}
+<SourceVersions source={source} inspect={inspect} changed={async () => { await refreshRoom(activeId); setSource(null); setHighlight(null); }} onError={setError} onNotice={setNotice} />
+{source.document.media_type === "application/pdf" && source.document.state === "ready" && <PdfReader documentId={source.document.id} page={source.page_number} pageCount={source.document.page_count} onPage={sourcePage} />}
+{source.document.warnings.map((warning, index) => <div className="inline-warning" key={index}>Page {String(warning.page)}: {String(warning.message)}</div>)}
+{highlight && (
                           <div className="citation-banner">
                             <Icon name="external" size={15} />
                             Showing the exact passage cited in this finding.
@@ -1177,7 +1226,7 @@ export default function ReadingRoom() {
                                 className="line-reference"
                                 title={`Lines ${p.line_start}–${p.line_end}`}
                               >
-                                L{p.line_start}
+                                {source.document.media_type === "application/pdf" ? `P${p.page_number} · ` : ""}L{p.line_start}
                                 {p.line_end !== p.line_start
                                   ? `–${p.line_end}`
                                   : ""}
@@ -1200,6 +1249,7 @@ export default function ReadingRoom() {
                                   p.text
                                 )}
                               </p>
+<ClaimSuggestions passageId={p.id} collectionId={activeId} choose={text => { setClaim(text); setTab("evidence"); setNotice("Suggested claim selected. Review it, then choose Investigate claim to confirm."); }} onError={setError} />
                             </div>
                           ))}
                         </div>
@@ -1242,7 +1292,7 @@ export default function ReadingRoom() {
                 </section>
               )}
               <footer className="room-footer">
-                <span>EvidenceLens / Local preview v0.1</span>
+                <span>EvidenceLens / Local v1 preview</span>
                 <span>Traceable sources. Considered judgments.</span>
               </footer>
             </>
@@ -1259,7 +1309,7 @@ export default function ReadingRoom() {
         </span>
         <h2>Remove “{pendingDelete?.title}”?</h2>
         <p>
-          Access will be revoked immediately. The worker will remove stored text
+          {pendingDelete?.type === "collection" ? "All sources and retained versions in this collection will be removed." : "This source and its retained versions will be removed."} Access will be revoked immediately. The worker will remove stored text
           and derived evidence. Downloaded briefs remain on your computer.
         </p>
         <div>
@@ -1290,15 +1340,16 @@ function FindingCard({
   ) => void;
 }) {
   const [note, setNote] = useState(finding.note);
+  useEffect(() => setNote(finding.note), [finding.note]);
   return (
     <article
       className={`finding-card ${finding.decision === "dismissed" ? "dismissed" : ""}`}
     >
       <div className="finding-source">
         <Icon name="file" size={14} />
-        <span>{finding.document_title.replace(".txt", "")}</span>
+        <span>{finding.document_title.replace(/\.(txt|pdf)$/i, "")}</span>
         <button onClick={inspect}>
-          L{finding.line_start}–{finding.line_end}
+          p.{finding.page_number} · L{finding.line_start}–{finding.line_end}
           <Icon name="external" size={12} />
         </button>
       </div>
