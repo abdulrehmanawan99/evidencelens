@@ -6,7 +6,11 @@ Updated 5 November 2026, Asia/Karachi.
 
 Local v1 modules are implemented: PDF/text parsing and originals; source versions/recovery; durable jobs; pgvector hybrid retrieval and embedding profiles; three live-generation adapter contracts and separate embeddings; claim suggestions/confirmation/revisions; evidence validation/review; stored exports/provenance; deletion/orphan cleanup; responsive source reader; Docker setup; generated contracts; fixtures/evaluation harness; CI and release documentation.
 
-The implementation is in /Users/apple/Desktop/evidencelens, an independent Git repository. Only EvidenceLens has been developed. No other portfolio app, hosted accounts, or v2 feature has been started.
+The implementation is in /Users/apple/Desktop/evidencelens, an independent Git repository. At the initial handoff only EvidenceLens had been developed. Subsequent portfolio work is recorded below; hosted accounts and v2 features have not been started.
+
+Updated delivery policy: these are GitHub portfolio projects, with up to three applications developed concurrently and no unnecessary infrastructure or speculative scope. The first active batch is EvidenceLens, Webhook Clinic, and CallMap. This changes the working policy, not the implementation status of the other applications. See AGENTS.md.
+
+Continuation: Webhook Clinic and CallMap now have separate Desktop Git repositories and are being implemented in parallel. Private GitHub repositories and PRs are authorized under `abdulrehmanawan99`. Built-in subagents are permitted without Warp visibility. Suitable free API catalogs were checked; live inference remains blocked by missing provider credentials and unverified compatibility (see free-providers.md).
 
 ## Verified
 
