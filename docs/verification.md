@@ -21,6 +21,18 @@ macOS15.8.1 x86_64, Python3.12.14, bundled Node24.19.0, Next16.4.5, React19.3.1,
 
 The backend suite emits one upstream Starlette warning about its deprecated httpx-based test client; it is recorded rather than hidden.
 
+## Continuation: evaluation quotation regression
+
+The evaluation script previously gave expected-evidence credit when a labeled
+fact appeared anywhere in the cited passage, even if the returned quotation was
+an unrelated part of it. Scoring now requires the labeled text within the actual
+valid quotation and the expected relation; retrieval recall remains separate.
+Four offline regression tests passed, and a fresh six-case text/PDF fixture run
+passed all expected outcomes and citation checks with full labeled retrieval and
+quotation evidence recall. Its report is retained locally as
+`.local/evaluation-quote-fix.json`; historical reports were not overwritten.
+These are still fixture results, not live model acceptance.
+
 ## Measured fixture results
 
 [evaluation-fixture.json](evaluation-fixture.json) and [evaluation-docker.json](evaluation-docker.json) each passed six cases: three known claims against text and PDF versions. Both record6/6 expected outcomes, six exact citations, all six cases passing citation validation, and1.0 labeled passage/evidence recall within context. These are predefined synthetic regression scenarios; they do not measure live semantic model quality or generalization.
