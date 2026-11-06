@@ -60,3 +60,75 @@ successful inference, held-out evaluation, second-provider result or general
 quality claim is included. A second model/provider is outside the current exact
 model authorization. Remaining live PDF behavior and the missing context finding
 are recorded gaps; do not replace this partial result with fixture scores.
+
+
+## Second diagnostic session
+
+The user authorized a new bounded session after the original records were
+preserved. No old budget or result was overwritten. Offline comparison found
+11 text paragraphs versus4 PDF page passages; the per-source nonempty line
+multisets matched exactly. Both formats supplied the preliminary estimate, so
+there is no evidence of parser text loss behind the omitted context finding.
+
+Provider-call records now retain only numeric HTTP status in `usage.http_status`
+(0 means no response), alongside existing numeric usage. They do not retain raw
+error bodies, request headers, credentials or transport error messages. Status
+cannot be overwritten by a provider-supplied usage field.
+
+Two targeted, single-HTTP investigations were attempted using the same exact
+Gemini model: the existing PDF conflict collection, then the existing text
+conflict collection. Both returned HTTP503, in3,762ms and1,181ms of provider time
+(4,431ms and1,924ms end to end). The private guard stopped at two service failures
+out of a12-attempt maximum. There were no automatic retries, quota/authentication
+failures, accepted outputs or reported token usage in this session. Total known
+external attempts across both sessions are8. The present failure is a provider
+HTTP503 affecting both formats; the old session's unrecorded HTTP cause remains
+unknown. No further model calls were made.
+
+The general evidence instruction now asks for a context quotation when an earlier
+estimate for the same entity, period and metric materially qualifies a final
+measurement. It also requires omitting irrelevant estimates and preserving the
+provisional/final distinction. This changes no fixture facts or validators;
+`grounded-evidence-v2` records the policy change. Its live effect is unverified
+because both requests failed before producing outputs. The missing-context gap
+therefore remains open.
+
+A future successful development run must demonstrate100% expected outcomes and
+exact citations, plus3/3 expected conflict quotations, before final numeric gates
+are frozen for the existing five-case held-out split. The earlier2/3 quotation
+baseline is not an acceptance target. Gate freezing and held-out execution remain
+pending this unresolved prerequisite; no held-out result has been manufactured.
+A second provider/model and semantic embeddings remain outside authorization.
+
+Private session2 records are `.local/live-api-session2.json`,
+`.local/live-http-session2.jsonl` and `.local/live-call-budget-session2.json`.
+The old records are preserved under `.local/session1-preserved/`. Current results
+remain readable through the isolated API/UI, while the test-session guard blocks
+additional inference. This guard is an ignored validation harness, not a product
+provider setting. Starting a future session must explicitly retain the old record
+and create a new measured budget; do not silently reset the guard.
+
+
+The follow-up passed the full71-test backend suite on the disposable test database
+and five offline evaluation-scoring/control tests. No hosted requests were used
+by those checks. The evaluator now stops after its first failed live investigation
+and writes the failed result, rather than continuing into more cases. `--format`
+selects text or PDF development cases separately; its default preserves both.
+The isolated instance's production frontend build also completed during restart.
+
+[Draft numeric gates](live-quality-gates.json) retain the observed baseline and
+explicitly record that freezing is blocked. After service availability returns
+and a new bounded session is deliberately authorized/prepared, the existing
+workflow can be staged as follows (these commands were not executed in session2):
+
+```bash
+.venv/bin/python scripts/evaluate.py --suite live --split development --format txt --output .local/development-next-text.json
+# Only after text passes, perform PDF development with --format pdf.
+# Only after all development prerequisites pass, freeze the numeric gates, then:
+.venv/bin/python scripts/evaluate.py --suite live --split held_out --output .local/held-out-once.json
+```
+
+Keep a separately measured worker request budget and single-request diagnostic
+control: script fail-fast prevents subsequent investigations, while provider
+request/repair limits apply inside an investigation. The current session2 guard
+remains stopped; these reproduction commands do not authorize resetting it.

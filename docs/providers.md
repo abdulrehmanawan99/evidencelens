@@ -74,6 +74,8 @@ Against the running API:
 .venv/bin/python scripts/evaluate.py --api http://127.0.0.1:8000 --suite live --split held_out --output docs/evaluation-live-held-out.json
 ```
 
+The live evaluator stops after the first failed investigation and records remaining cases as unattempted. Use `--format txt` or `--format pdf` to stage development formats; the default is both. A separate bounded worker control is still needed to count HTTP attempts within a job. [Current draft gates](live-quality-gates.json) are not frozen because the second diagnostic session hit HTTP503 in both formats.
+
 The corpus is fixtures/evaluation.json. Development cases run against both text and PDF samples. The held_out split separately evaluates five previously defined new-source cases. The script checks expected outcome, citation membership/exactness, labeled passage recall within the selected context, and expected evidence relations. These automated checks cannot fully judge whether an explanation is correct; human review remains required. It deletes only its own collections and records provider configuration and usage without keys.
 
 Evidence recall now requires the expected labeled text to occur inside a valid

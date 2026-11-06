@@ -177,5 +177,61 @@
     "state": "ready",
     "exact_quotes_preserved": true,
     "model_and_retrieval_provenance_preserved": true
+  },
+  "session2_diagnostics": {
+    "started_at": "2026-11-06T18:21:26.090648+00:00",
+    "analysis_version": "grounded-evidence-v2",
+    "attempts": 2,
+    "state": "stopped_two_service_failures",
+    "offline_comparison": {
+      "text_passages": 11,
+      "pdf_passages": 4,
+      "same_source_line_multisets": true
+    },
+    "results": [
+      {
+        "format": "pdf",
+        "case_id": "harbor-conflict",
+        "run_id": "62b68bec-071b-49a8-994b-ca418fe88a54",
+        "state": "failed",
+        "error_code": "provider_unavailable",
+        "elapsed_ms": 4431,
+        "provider_calls": [
+          {
+            "kind": "generation",
+            "provider": "openai_compatible",
+            "model": "gemini-3.5-flash-lite",
+            "state": "provider_unavailable",
+            "duration_ms": 3762,
+            "usage": {
+              "http_status": 503
+            }
+          }
+        ]
+      },
+      {
+        "format": "txt",
+        "case_id": "harbor-conflict",
+        "run_id": "4e6fa5f6-9b14-4055-a3d8-d266c6e084ae",
+        "state": "failed",
+        "error_code": "provider_unavailable",
+        "elapsed_ms": 1924,
+        "provider_calls": [
+          {
+            "kind": "generation",
+            "provider": "openai_compatible",
+            "model": "gemini-3.5-flash-lite",
+            "state": "provider_unavailable",
+            "duration_ms": 1181,
+            "usage": {
+              "http_status": 503
+            }
+          }
+        ]
+      }
+    ],
+    "context_policy_live_validated": false,
+    "held_out_run": false,
+    "reason": "Both single-request PDF and text comparators returned HTTP503; stop condition reached. No further calls. Earlier session1 HTTP cause remains unknown."
   }
 }
