@@ -127,13 +127,16 @@ def request_json(provider, endpoint, path, model, payload, key, kind, control=No
         control.check()
         control.before_request()
         started = time.monotonic()
-        state, usage = "provider_unavailable", {}
+        state, usage = "provider_unavailable", {"http_status": 0}
         try:
             timeout = max(0.1, min(settings.provider_timeout, control.remaining()))
             with httpx.Client(timeout=httpx.Timeout(timeout, connect=min(5, timeout)), follow_redirects=False, trust_env=False, transport=transport) as client:
                 with client.stream("POST", endpoint + path, json=payload, headers=headers) as response:
-                    if response.status_code in {429, 500, 502, 503, 504}:
-                        raise ProviderError("provider_rate_limited" if response.status_code == 429 else "provider_unavailable", transient=True)
+                    usage["http_status"] = response.status_code
+                    if response.status_code == 429:
+                        raise ProviderError("provider_rate_limited")
+                    if response.status_code in {500, 502, 503, 504}:
+                        raise ProviderError("provider_unavailable", transient=True)
                     if response.status_code in {401, 403}:
                         raise ProviderError("provider_authentication_failed")
                     if response.status_code != 200:
@@ -148,7 +151,8 @@ def request_json(provider, endpoint, path, model, payload, key, kind, control=No
             if not isinstance(data, dict):
                 raise ProviderError("invalid_provider_response")
             raw_usage = data.get("usage", {})
-            usage = {k: v for k, v in raw_usage.items() if isinstance(v, (int, float)) and math.isfinite(v)} if isinstance(raw_usage, dict) else {}
+            if isinstance(raw_usage, dict):
+                usage.update({k: v for k, v in raw_usage.items() if k != "http_status" and isinstance(v, (int, float)) and math.isfinite(v)})
             for name in ["prompt_eval_count", "eval_count", "total_duration"]:
                 if isinstance(data.get(name), (int, float)) and math.isfinite(data[name]):
                     usage[name] = data[name]
@@ -229,7 +233,10 @@ Distinguish support, candidate conflict, and contextual qualifications. Match en
 units, scope, and provisional/final status. A different period or an earlier estimate is not by itself
 a contradiction. Quote exact text from supplied passages. Labels are interpretations for human review,
 not truth guarantees. If sources do not establish a claim, report insufficient_evidence. Include gaps
-and uncertainty in limitations. Every finding needs a supplied passage ID and an exact quotation."""
+and uncertainty in limitations. When an earlier estimate or forecast for the same entity, period,
+and metric materially qualifies a final measurement, include it as a separate context finding and
+explain its provisional status. Omit irrelevant estimates and never treat a forecast alone as a
+contradiction of a final total. Every finding needs a supplied passage ID and an exact quotation."""
 
 
 def generate(schema_type, instructions, content, control=None):

@@ -1,5 +1,13 @@
 """Evaluation regressions; no application database or provider calls."""
 import unittest
+from contextlib import redirect_stdout
+from io import BytesIO, StringIO
+import json
+from pathlib import Path
+import tempfile
+from unittest.mock import patch
+
+import evaluate
 
 from evaluate import score_evidence
 
@@ -37,6 +45,39 @@ class EvidenceScoreTests(unittest.TestCase):
         self.assertTrue(score["citations_valid"])
         self.assertEqual(score["evidence_matched"], 0)
         self.assertEqual(score["relevant_passages"], 0)
+
+
+class BoundedEvaluationTests(unittest.TestCase):
+    def test_first_failed_live_case_stops_other_cases_and_persists_report(self):
+        investigated = []
+        def response(request, timeout=30):
+            path = request.full_url.split("/api/v1", 1)[1]
+            if path == "/provider-status":
+                value = {"mode": "openai_compatible", "configured": True, "provider": "test-model", "embedding": {"provider": "local_lexical"}}
+            elif path.startswith("/sample"):
+                value = {"id": "evaluation-only"}
+            elif path.endswith("/documents"):
+                value = {"items": [{"state": "ready"}]}
+            elif path.endswith("/investigations"):
+                investigated.append(path)
+                value = {"id": "run", "job": {"id": "job", "state": "failed", "error_code": "provider_rate_limited"}}
+            elif request.get_method() == "DELETE":
+                value = {"id": "cleanup", "state": "succeeded"}
+            else:
+                self.fail("Unexpected API action: " + path)
+            return BytesIO(json.dumps(value).encode())
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "report.json"
+            args = ["evaluate.py", "--suite", "live", "--format", "txt", "--output", str(output)]
+            with patch("sys.argv", args), patch.object(evaluate, "urlopen", response), redirect_stdout(StringIO()):
+                with self.assertRaises(SystemExit) as raised:
+                    evaluate.main()
+            report = json.loads(output.read_text())
+        self.assertEqual(raised.exception.code, 1)
+        self.assertEqual(len(investigated), 1)
+        self.assertEqual(len(report["results"]), 1)
+        self.assertEqual(report["results"][0]["error"], "provider_rate_limited")
+        self.assertIn("not attempted", report["stopped_reason"])
 
 
 if __name__ == "__main__":

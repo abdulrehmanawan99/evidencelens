@@ -1,6 +1,6 @@
 # Implementation status
 
-Updated 5 November 2026, Asia/Karachi.
+Updated 6 November 2026, Asia/Karachi.
 
 ## Delivered
 
@@ -10,7 +10,7 @@ The implementation is in /Users/apple/Desktop/evidencelens, an independent Git r
 
 Updated delivery policy: these are GitHub portfolio projects, with up to three applications developed concurrently and no unnecessary infrastructure or speculative scope. The first active batch is EvidenceLens, Webhook Clinic, and CallMap. This changes the working policy, not the implementation status of the other applications. See AGENTS.md.
 
-Continuation: Webhook Clinic and CallMap now have separate Desktop Git repositories and are being implemented in parallel. Private GitHub repositories and PRs are authorized under `abdulrehmanawan99`. Built-in subagents are permitted without Warp visibility. Suitable free API catalogs were checked; live inference remains blocked by missing provider credentials and unverified compatibility (see free-providers.md).
+Continuation: Webhook Clinic and CallMap now have separate Desktop Git repositories and are being implemented in parallel. Private GitHub repositories and PRs are authorized under `abdulrehmanawan99`. Built-in subagents are permitted without Warp visibility. Suitable free API catalogs were checked. The later Gemini-only synthetic development results are recorded in [live validation](live-validation.md).
 
 ## Verified
 
@@ -20,6 +20,8 @@ The fixture evaluation passed six text/PDF scenarios with six exact citations an
 
 ## Remaining acceptance
 
-Live end-to-end generation/embedding checks and quality evaluation remain blocked because no live provider/key or local model is configured. MockTransport contract tests validate request/response handling, not actual remote compatibility or model quality. Two real provider configurations should be evaluated when available; numeric live quality gates must follow the first measured development baseline and be frozen before held-out execution.
+The exact authorized model `gemini-3.5-flash-lite` passed the real provider check and three text development investigations using explicit `local_lexical` retrieval. All three outcomes and three quotations were valid, but one expected context finding was omitted. The first PDF investigation failed with `provider_unavailable` after two attempts, and further calls stopped. A later bounded diagnostic session made one PDF and one text request; both returned retained HTTP503 and the session stopped after two service failures. The general provisional-context instruction is now versioned as `grounded-evidence-v2`, but its live effect and held-out evaluation remain unverified. See [live validation](live-validation.md).
 
-This is an implemented local v1 candidate with explicit live acceptance still outstanding. It would be inaccurate to say only v2 remains or to mark full AI acceptance complete. GitHub publishing is a separate optional action.
+Local lexical retrieval makes no embedding-model calls and does not establish semantic embedding quality. PDF live validation and broader model quality remain incomplete. A second model/provider is blocked by the current exact-model authorization; no alternate or hosted embedding model was called. No held-out result or full model acceptance is claimed.
+
+This is an implemented local v1 candidate with explicit live acceptance still outstanding. It would be inaccurate to say only v2 remains or to mark full AI acceptance complete. PR1 was merged by the user; follow-up changes use a fresh branch and PR.
