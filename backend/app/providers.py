@@ -132,8 +132,10 @@ def request_json(provider, endpoint, path, model, payload, key, kind, control=No
             timeout = max(0.1, min(settings.provider_timeout, control.remaining()))
             with httpx.Client(timeout=httpx.Timeout(timeout, connect=min(5, timeout)), follow_redirects=False, trust_env=False, transport=transport) as client:
                 with client.stream("POST", endpoint + path, json=payload, headers=headers) as response:
-                    if response.status_code in {429, 500, 502, 503, 504}:
-                        raise ProviderError("provider_rate_limited" if response.status_code == 429 else "provider_unavailable", transient=True)
+                    if response.status_code == 429:
+                        raise ProviderError("provider_rate_limited")
+                    if response.status_code in {500, 502, 503, 504}:
+                        raise ProviderError("provider_unavailable", transient=True)
                     if response.status_code in {401, 403}:
                         raise ProviderError("provider_authentication_failed")
                     if response.status_code != 200:

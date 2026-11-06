@@ -64,6 +64,6 @@ Tests create/delete their own synthetic collections. Screenshots in screenshots/
 
 ## Outstanding acceptance
 
-No actual OpenAI, compatible-provider, or Ollama generation/embedding request was executed. Contract tests use MockTransport and cannot establish live compatibility. [evaluation-live.json](evaluation-live.json) explicitly records blocked coverage. Configure a real provider, run capability/development checks, calibrate and freeze live quality gates, then execute the held-out split and a second real configuration when available.
+The original checks above were fixture/mocked verification. On 6 November 2026, actual `gemini-3.5-flash-lite` generation passed the provider check and three text cases with `local_lexical` retrieval. The first PDF case failed after two unavailable-provider attempts; further calls stopped. [Live validation](live-validation.md) and [evaluation-live.json](evaluation-live.json) record the exact call counts, usage, partial quotation recall and remaining limits. No hosted embedding, alternate model, held-out result or full AI acceptance is claimed.
 
 GitHub Actions has not run on GitHub; its pinned workflow was supplied for a future push. No remote, public hosting, or hosted authentication was created. The source-run development watcher was not reaccepted in this sandbox; production build/start is the verified path. Temporary verification servers are shut down after checks.
