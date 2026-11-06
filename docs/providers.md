@@ -21,7 +21,7 @@ Endpoints must use HTTPS, except an explicit set of trusted local hostnames/loop
 5. Set numeric live interpretation/recall/abstention gates from that development baseline, record model/profile versions, then freeze gates before held-out evaluation.
 6. Repeat with a second real configuration when available.
 
-The current report records live coverage as blocked; neither OpenAI, compatible remote service, nor Ollama was called. Fixture measurements and mocked contract tests are separate evidence. No numeric live quality thresholds or successful live results have been invented.
+A bounded actual Gemini development run is recorded in [live validation](live-validation.md) and [evaluation-live.json](evaluation-live.json). Three text cases succeeded; the first PDF case failed after two unavailable-provider attempts. This is partial compatibility evidence, with an omitted context finding and no semantic-embedding acceptance. Quota (429) and authentication (401/403) errors stop after one request; existing bounded transient-service retries remain.
 
 ## Constrained Gemini generation with local lexical retrieval
 
@@ -29,8 +29,8 @@ The current authorization permits only the exact generation model
 `gemini-3.5-flash-lite`. It supersedes the earlier Gemini3.8 and hosted embedding
 candidates. Never call another model or a hosted embedding endpoint under this
 profile. Keep billing disabled, use synthetic sources, and keep the supplied key
-in private server configuration outside Git. This configuration is a compatibility
-candidate; it does not establish live quality or model acceptance.
+in private server configuration outside Git. Bounded text compatibility results for this configuration are recorded in
+[live validation](live-validation.md); they do not establish general model acceptance.
 
 ```dotenv
 MODEL_MODE=openai_compatible
@@ -73,6 +73,8 @@ Against the running API:
 # After development baseline review and freezing the live gates:
 .venv/bin/python scripts/evaluate.py --api http://127.0.0.1:8000 --suite live --split held_out --output docs/evaluation-live-held-out.json
 ```
+
+The live evaluator stops after the first failed investigation and records remaining cases as unattempted. Use `--format txt` or `--format pdf` to stage development formats; the default is both. A separate bounded worker control is still needed to count HTTP attempts within a job. [Current draft gates](live-quality-gates.json) are not frozen because the second diagnostic session hit HTTP503 in both formats.
 
 The corpus is fixtures/evaluation.json. Development cases run against both text and PDF samples. The held_out split separately evaluates five previously defined new-source cases. The script checks expected outcome, citation membership/exactness, labeled passage recall within the selected context, and expected evidence relations. These automated checks cannot fully judge whether an explanation is correct; human review remains required. It deletes only its own collections and records provider configuration and usage without keys.
 

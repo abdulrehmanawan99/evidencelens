@@ -2,7 +2,7 @@
 
 A private, local PDF/text reading room for investigating claims, comparing conflicting reports, reviewing exact source citations, and saving cited Markdown briefs.
 
-**Local v1 functionality is implemented. Live AI acceptance is pending a configured provider.** Fixture mode is a reproducible demonstration with synthetic reports and predefined interpretations; its results do not establish model quality.
+**Local v1 functionality is implemented. Bounded Gemini text validation succeeded; broader live AI acceptance remains incomplete.** See the [actual results and limitations](docs/live-validation.md). Fixture mode is a reproducible demonstration with synthetic reports and predefined interpretations; its results do not establish model quality.
 
 ![Evidence board](docs/screenshots/evidence-board.png)
 

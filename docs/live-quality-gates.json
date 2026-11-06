@@ -1,0 +1,31 @@
+{
+  "state": "pending_development_confirmation",
+  "frozen_before_held_out": false,
+  "analysis_version": "grounded-evidence-v2",
+  "provider": "gemini-3.5-flash-lite",
+  "retrieval_provider": "local_lexical",
+  "development_prerequisites": {
+    "successful_cases": 6,
+    "expected_outcome_fraction": 1.0,
+    "exact_citation_fraction": 1.0,
+    "conflict_expected_quote_matches_per_format": 3,
+    "conflict_expected_quote_labels_per_format": 3
+  },
+  "proposed_held_out_gates": {
+    "successful_cases": 5,
+    "expected_outcome_fraction": 1.0,
+    "exact_citation_fraction": 1.0,
+    "expected_quotation_evidence_recall": 1.0
+  },
+  "baseline": {
+    "text_outcomes_correct": 3,
+    "text_cases": 3,
+    "text_valid_quotes": 3,
+    "text_quotes": 3,
+    "conflict_expected_quotation_matches": 2,
+    "conflict_expected_quotation_labels": 3,
+    "v2_live_outputs": 0
+  },
+  "blocked_reason": "Session2 single-request PDF and text diagnostics both returned HTTP503; context-policy effect and development prerequisites remain unverified. No held-out calls made.",
+  "procedure": "Complete staged development validation, then freeze these gates before the existing five-case held-out run. Do not tune against held-out outputs or lower gates to pass."
+}

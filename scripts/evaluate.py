@@ -36,6 +36,7 @@ def main():
     parser.add_argument("--api", default="http://127.0.0.1:8000")
     parser.add_argument("--suite", choices=["fixture", "live"], default="fixture")
     parser.add_argument("--split", choices=["development", "held_out", "all"], default="development")
+    parser.add_argument("--format", choices=["txt", "pdf", "both"], default="both", help="Run text or PDF development cases separately before using both.")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     dataset = json.loads((ROOT / "fixtures/evaluation.json").read_text())
@@ -71,10 +72,14 @@ def main():
 
     collections = []
     try:
-        scenarios = [("txt", dataset["development"]), ("pdf", dataset["development"])] if args.suite == "fixture" or args.split in {"development", "all"} else []
+        formats = ["txt", "pdf"] if args.format == "both" else [args.format]
+        scenarios = [(format, dataset["development"]) for format in formats] if args.suite == "fixture" or args.split in {"development", "all"} else []
         if args.suite == "live" and args.split in {"held_out", "all"}:
             scenarios += [("held_out", dataset["held_out"])]
+        stop_live = False
         for format, cases in scenarios:
+            if stop_live:
+                break
             collection = None
             for case in cases:
                 if format == "held_out" or collection is None:
@@ -109,6 +114,10 @@ def main():
                     result.update(state="failed", error=str(exc))
                 result["investigation_ms"] = round((time.monotonic()-started)*1000)
                 report["results"].append(result)
+                if args.suite == "live" and result["state"] == "failed":
+                    report["stopped_reason"] = "First failed live investigation; remaining cases were not attempted."
+                    stop_live = True
+                    break
     finally:
         for identifier in collections:
             try:
