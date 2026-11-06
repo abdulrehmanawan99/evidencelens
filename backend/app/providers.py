@@ -92,6 +92,8 @@ def checked_endpoint(value):
 def embedding_configuration():
     if settings.model_mode == "fixture":
         config = {"provider": "fixture", "model": "hashed-lexical-demo-v1", "dimensions": 64, "endpoint": "fixture"}
+    elif settings.embedding_provider == "local_lexical":
+        config = {"provider": "local_lexical", "model": "hashed-lexical-demo-v1", "dimensions": 64, "endpoint": "local"}
     else:
         if settings.embedding_provider not in {"openai", "openai_compatible", "ollama"}:
             raise ProviderError("unsupported_embedding_provider")
@@ -195,7 +197,7 @@ def embed_texts(texts, control=None):
         batch = texts[start:start+32]
         if any(not text.strip() or len(text.encode()) > 12000 for text in batch):
             raise ProviderError("embedding_input_limit")
-        if config["provider"] == "fixture":
+        if config["provider"] in {"fixture", "local_lexical"}:
             vectors = []
             for text in batch:
                 vector = [0.0] * 64

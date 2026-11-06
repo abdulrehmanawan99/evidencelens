@@ -4,7 +4,7 @@ Fixture is the default and makes no model calls. It accepts only the bundled cor
 
 ## Server configuration
 
-Generation uses MODEL_MODE (fixture/openai/openai_compatible/ollama), GENERATION_MODEL, GENERATION_ENDPOINT, and GENERATION_API_KEY. Embeddings use EMBEDDING_PROVIDER, EMBEDDING_MODEL, EMBEDDING_ENDPOINT, EMBEDDING_API_KEY, and EMBEDDING_DIMENSIONS. OPENAI_API_KEY is a fallback for either key. Values are read when API/worker start. Keep the ignored .env private; the setup helper sets mode0600.
+Generation uses MODEL_MODE (fixture/openai/openai_compatible/ollama), GENERATION_MODEL, GENERATION_ENDPOINT, and GENERATION_API_KEY. Embeddings use EMBEDDING_PROVIDER (openai/openai_compatible/ollama/local_lexical), EMBEDDING_MODEL, EMBEDDING_ENDPOINT, EMBEDDING_API_KEY, and EMBEDDING_DIMENSIONS. OPENAI_API_KEY is a fallback for either key. Values are read when API/worker start. Keep the ignored .env private; the setup helper sets mode0600.
 
 OpenAI generation uses /responses with store:false, strict text.format JSON schema, and max_output_tokens. Compatible chat uses /chat/completions with strict response_format and max_tokens. Ollama uses /api/chat with a JSON schema and /api/embed with truncate:false. Compatible providers must support these contracts; a model name alone does not prove capability.
 
@@ -15,7 +15,7 @@ Endpoints must use HTTPS, except an explicit set of trusted local hostnames/loop
 ## Operational flow
 
 1. Configure models/endpoints/keys in ignored .env and restart the API/worker.
-2. Choose Check provider. This makes a bounded embedding request plus a schema-generation request in live mode. Failures show sanitized codes.
+2. Choose Check provider. This computes a local vector (local_lexical) or makes a bounded embedding request (hosted/Ollama), plus a schema-generation request in live mode. Failures show sanitized codes.
 3. Rebuild the search index for existing collections when the embedding profile changes.
 4. Run the development evaluation and inspect actual citations/explanations.
 5. Set numeric live interpretation/recall/abstention gates from that development baseline, record model/profile versions, then freeze gates before held-out evaluation.
@@ -23,34 +23,45 @@ Endpoints must use HTTPS, except an explicit set of trusted local hostnames/loop
 
 The current report records live coverage as blocked; neither OpenAI, compatible remote service, nor Ollama was called. Fixture measurements and mocked contract tests are separate evidence. No numeric live quality thresholds or successful live results have been invented.
 
-## Free-tier Gemini candidate
+## Constrained Gemini generation with local lexical retrieval
 
-The operator requested free API options. Google's current pricing documents free
-tiers for Gemini Flash generation and text embeddings, and its audio guide
-documents timestamped transcription. One Gemini API key is therefore the preferred
-candidate for this portfolio's first live capability checks. It is not yet an
-accepted EvidenceLens provider configuration.
+The current authorization permits only the exact generation model
+`gemini-3.5-flash-lite`. It supersedes the earlier Gemini3.8 and hosted embedding
+candidates. Never call another model or a hosted embedding endpoint under this
+profile. Keep billing disabled, use synthetic sources, and keep the supplied key
+in private server configuration outside Git. This configuration is a compatibility
+candidate; it does not establish live quality or model acceptance.
 
-An empty private key template is at `/Users/apple/Desktop/.portfolio-api.env`,
-outside all repositories. Keep billing disabled on its Google project and keep
-the key out of chat/Git. No key has been configured or read into app processes.
-The coordinator handles server configuration after the key is supplied; fixture
-mode continues to make no external calls.
+```dotenv
+MODEL_MODE=openai_compatible
+GENERATION_MODEL=gemini-3.5-flash-lite
+GENERATION_ENDPOINT=https://generativelanguage.googleapis.com/v1beta/openai
+# Set GENERATION_API_KEY privately; never commit its value.
+EMBEDDING_PROVIDER=local_lexical
+EMBEDDING_MODEL=hashed-lexical-demo-v1
+EMBEDDING_DIMENSIONS=64
+EMBEDDING_ENDPOINT=local
+EMBEDDING_API_KEY=
+CONTEXT_TOKENS=16000
+```
 
-Google documents an OpenAI-compatible endpoint at
-`https://generativelanguage.googleapis.com/v1beta/openai`, with
-`gemini-3.8-flash` and `gemini-embedding-001` as capability-check candidates for
-the existing compatible adapters. Actual strict-schema behavior, dimensionality,
-quotas, and citation quality must pass checks before activation/reindexing. A
-listed model or pricing page is not a compatibility or quality result. Do not
-enable paid fallback or silently replace an existing collection index.
+`local_lexical` reuses the fixture's deterministic hashed word-count vectors and
+normalization, entirely in process, with no HTTP or model calls. Its model label,
+64 dimensions, and `local` endpoint are fixed regardless of embedding environment
+values. It is lexical retrieval, not semantic embeddings or an embedding-model
+acceptance result. Generation still sends selected passages and claims to Gemini.
+The provider bar and persisted run provenance identify retrieval as
+`local_lexical`. The profile has a distinct fingerprint from fixture and hosted
+profiles; explicitly rebuild existing collection indexes after switching. Old
+vectors cannot satisfy the new profile, even though fixture vectors use the same
+algorithm. Switching back to fixture retains the original fixture profile.
 
-Sources checked 5 November 2026:
-[pricing](https://aistudio.google.com/docs/pricing),
-[compatible endpoint](https://aistudio.google.com/docs/openai),
-[embeddings](https://aistudio.google.com/docs/embeddings),
-[audio](https://aistudio.google.com/docs/audio), and
-[key setup](https://aistudio.google.com/docs/api-key).
+Restart API/worker with this private configuration, choose **Check provider**, then
+**Rebuild search index** on the isolated validation collection before evaluation.
+The provider check runs local hashing plus Gemini generation; it makes no hosted
+embedding request. Existing strict-schema response and exact-citation validation
+still apply. Stop on authentication/quota failures; never substitute a model or
+activate paid fallback. No live result is implied by this setup documentation.
 
 ## Reproduce
 
