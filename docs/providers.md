@@ -29,8 +29,8 @@ The current authorization permits only the exact generation model
 `gemini-3.5-flash-lite`. It supersedes the earlier Gemini3.8 and hosted embedding
 candidates. Never call another model or a hosted embedding endpoint under this
 profile. Keep billing disabled, use synthetic sources, and keep the supplied key
-in private server configuration outside Git. This configuration is a compatibility
-candidate; it does not establish live quality or model acceptance.
+in private server configuration outside Git. Bounded text compatibility results for this configuration are recorded in
+[live validation](live-validation.md); they do not establish general model acceptance.
 
 ```dotenv
 MODEL_MODE=openai_compatible
