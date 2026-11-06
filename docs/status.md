@@ -24,4 +24,4 @@ The exact authorized model `gemini-3.5-flash-lite` passed the real provider chec
 
 Local lexical retrieval makes no embedding-model calls and does not establish semantic embedding quality. PDF live validation and broader model quality remain incomplete. A second model/provider is blocked by the current exact-model authorization; no alternate or hosted embedding model was called. No held-out result or full model acceptance is claimed.
 
-This is an implemented local v1 candidate with explicit live acceptance still outstanding. It would be inaccurate to say only v2 remains or to mark full AI acceptance complete. GitHub publishing is a separate optional action.
+This is an implemented local v1 candidate with explicit live acceptance still outstanding. It would be inaccurate to say only v2 remains or to mark full AI acceptance complete. PR1 was merged by the user; follow-up changes use a fresh branch and PR.
