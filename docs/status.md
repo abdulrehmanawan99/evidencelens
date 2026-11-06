@@ -20,7 +20,7 @@ The fixture evaluation passed six text/PDF scenarios with six exact citations an
 
 ## Remaining acceptance
 
-The exact authorized model `gemini-3.5-flash-lite` passed the real provider check and three text development investigations using explicit `local_lexical` retrieval. All three outcomes and three quotations were valid, but one expected context finding was omitted. The first PDF investigation failed with `provider_unavailable` after two attempts, and further calls stopped. See [live validation](live-validation.md).
+The exact authorized model `gemini-3.5-flash-lite` passed the real provider check and three text development investigations using explicit `local_lexical` retrieval. All three outcomes and three quotations were valid, but one expected context finding was omitted. The first PDF investigation failed with `provider_unavailable` after two attempts, and further calls stopped. A later bounded diagnostic session made one PDF and one text request; both returned retained HTTP503 and the session stopped after two service failures. The general provisional-context instruction is now versioned as `grounded-evidence-v2`, but its live effect and held-out evaluation remain unverified. See [live validation](live-validation.md).
 
 Local lexical retrieval makes no embedding-model calls and does not establish semantic embedding quality. PDF live validation and broader model quality remain incomplete. A second model/provider is blocked by the current exact-model authorization; no alternate or hosted embedding model was called. No held-out result or full model acceptance is claimed.
 

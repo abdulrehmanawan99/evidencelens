@@ -368,6 +368,39 @@ def test_transient_provider_failure_keeps_existing_two_attempt_limit(monkeypatch
         LiveAdapter().analyze("The total was 42 units.", [doc], [passage])
     assert calls == ["/v1/chat/completions", "/v1/chat/completions"]
 
+
+@pytest.mark.parametrize("status", [200, 400, 429, 503])
+def test_provider_diagnostics_retain_only_http_status_and_numeric_usage(monkeypatch, status):
+    remote_settings("openai_compatible")
+    records = []
+    class Control(providers.NoControl):
+        def record(self, **kwargs): records.append(kwargs)
+    private_body = {"usage": {"prompt_tokens": 9, "http_status": 999, "raw": "credential-or-document-text"}, "message": "private-provider-body"}
+    monkeypatch.setattr(providers, "transport", httpx.MockTransport(lambda _: httpx.Response(status, json=private_body)))
+    monkeypatch.setattr(providers.time, "sleep", lambda _: None)
+    if status == 200:
+        providers.request_json("openai_compatible", "https://unit.provider/v1", "/chat/completions", "test-generation", {}, "test-only-key", "generation", Control())
+    else:
+        with pytest.raises(ProviderError):
+            providers.request_json("openai_compatible", "https://unit.provider/v1", "/chat/completions", "test-generation", {}, "test-only-key", "generation", Control())
+    assert all(row["usage"]["http_status"] == status for row in records)
+    assert "private-provider-body" not in json.dumps(records)
+    assert "credential-or-document-text" not in json.dumps(records)
+    assert "test-only-key" not in json.dumps(records)
+
+
+def test_transport_failure_retains_explicit_no_response_status(monkeypatch):
+    records = []
+    class Control(providers.NoControl):
+        def record(self, **kwargs): records.append(kwargs)
+    def handler(request): raise httpx.ConnectError("sensitive transport detail", request=request)
+    monkeypatch.setattr(providers, "transport", httpx.MockTransport(handler))
+    monkeypatch.setattr(providers.time, "sleep", lambda _: None)
+    with pytest.raises(ProviderError, match="provider_unavailable"):
+        providers.request_json("openai_compatible", "https://unit.provider/v1", "/chat/completions", "test-generation", {}, "test-only-key", "generation", Control())
+    assert len(records) == 2 and all(row["usage"] == {"http_status": 0} for row in records)
+    assert "sensitive" not in json.dumps(records)
+
 def test_provider_refusal_is_not_repaired_or_published(monkeypatch):
     remote_settings()
     doc,passage=evidence()
