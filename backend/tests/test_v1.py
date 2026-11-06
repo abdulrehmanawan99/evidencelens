@@ -20,6 +20,7 @@ from app.fixtures import CLAIMS, PDF_DIRECTORY
 from app.main import app
 from app.models import Document, EmbeddingProfile, Export, Finding, Job, Passage, PassageEmbedding, ProviderCall, now, uid
 from app.providers import LiveAdapter, ProviderError, configuration, embed_texts, validate_vectors
+from app.retrieval import retrieve
 from app.services import artifact_path
 from app.worker import JobControl, claim_job, finish, prepare, run_once, sweep_orphans
 from test_workflow import analyzed, drain, seeded
@@ -170,6 +171,57 @@ def test_atomic_profile_reindex_and_retrieval_trace(client):
     assert {h["method"] for h in trace["hits"]} == {"keyword","vector"}
     assert any(h["in_context"] for h in trace["hits"])
 
+
+
+def test_local_lexical_reindex_keeps_fixture_profile_isolated(client, monkeypatch):
+    c = seeded(client)
+    path = f"/api/v1/collections/{c['id']}/index-status"
+    fixture = client.get(path).json()
+    remote_settings("openai_compatible")
+    object.__setattr__(settings, "embedding_provider", "local_lexical")
+    def unexpected_http(*args, **kwargs):
+        raise AssertionError("Local lexical retrieval must not use HTTP")
+    monkeypatch.setattr(providers.httpx, "Client", unexpected_http)
+    pending = client.get(path).json()
+    assert not pending["ready"] and pending["profile_id"] is None
+    assert pending["fingerprint"] != fixture["fingerprint"]
+    providers_config = providers.embedding_configuration()
+    with Session() as session:
+        ids = list(session.scalars(select(Document.id).where(Document.collection_id == c["id"])))
+        with pytest.raises(ProviderError, match="index_required"):
+            retrieve(session, c["id"], ids, CLAIMS[0])
+    assert client.post(f"/api/v1/collections/{c['id']}/reindex").status_code == 202
+    drain()
+    indexed = client.get(path).json()
+    assert indexed["ready"] and indexed["profile_id"] != fixture["profile_id"]
+    assert indexed["provider"] == "local_lexical" and indexed["dimensions"] == 64
+    with Session() as session:
+        profile, selected, _ = retrieve(session, c["id"], ids, CLAIMS[0])
+        assert profile.id == indexed["profile_id"] and selected
+        assert profile.configuration == providers_config
+    object.__setattr__(settings, "model_mode", "fixture")
+    restored = client.get(path).json()
+    assert restored["ready"] and restored["profile_id"] == fixture["profile_id"]
+
+
+def test_local_lexical_reuses_fixture_vectors_without_http(monkeypatch):
+    def unexpected_http(*args, **kwargs):
+        raise AssertionError("Local lexical embedding must not use HTTP")
+    monkeypatch.setattr(providers.httpx, "Client", unexpected_http)
+    texts = ["Repeated words words. Mixed CASE 42", "!!!"] * 17  # Cross the batch boundary.
+    fixture, expected = embed_texts(texts)
+    remote_settings("openai_compatible")
+    object.__setattr__(settings, "embedding_provider", "local_lexical")
+    # Remote-only dimensions/model/endpoint/key are ignored by this fixed local profile.
+    object.__setattr__(settings, "embedding_endpoint", "not-an-http-endpoint")
+    profile, actual = embed_texts(texts)
+    assert actual == expected and all(len(vector) == 64 for vector in actual)
+    assert actual[1] == [1.0] + [0.0] * 63
+    assert profile == {**fixture, "provider": "local_lexical", "endpoint": "local", "fingerprint": profile["fingerprint"]}
+    assert profile["fingerprint"] != fixture["fingerprint"]
+    assert configuration()["embedding"] == profile
+    object.__setattr__(settings, "model_mode", "fixture")
+    assert embed_texts(texts) == (fixture, expected)
 
 def test_cross_collection_vector_hits_are_excluded(client):
     a,b = seeded(client),seeded(client)
