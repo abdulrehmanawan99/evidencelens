@@ -66,6 +66,8 @@ CONTEXT_TOKENS=16000
 
 Separate `GENERATION_API_KEY` and `EMBEDDING_API_KEY` override `OPENAI_API_KEY`. For compatible APIs use `MODEL_MODE=openai_compatible` and/or `EMBEDDING_PROVIDER=openai_compatible`. They must support strict JSON schema and the embedding request contract. For Ollama use `ollama`, set both model IDs and actual embedding dimensions, and use endpoints such as `http://127.0.0.1:11434` (source run) or `http://host.docker.internal:11434` (Docker).
 
+For the current Gemini-only authorization, use the exact `gemini-3.5-flash-lite` generation profile with `EMBEDDING_PROVIDER=local_lexical` in [provider setup](docs/providers.md#constrained-gemini-generation-with-local-lexical-retrieval). Local lexical retrieval makes no embedding API calls and does not provide semantic embeddings.
+
 Restart API/worker after configuration changes. Choose **Check provider**, then **Rebuild search index** for existing sources. A configured provider is not a quality guarantee. Live mode sends selected document excerpts and claims to the configured services. Fixture mode makes no model calls. See [provider setup and evaluation](docs/providers.md).
 
 ## Verify
