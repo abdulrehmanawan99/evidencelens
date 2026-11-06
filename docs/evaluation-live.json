@@ -1,20 +1,181 @@
 {
   "dataset": "evidencelens-eval-v1",
-  "started_at": "2026-11-04T22:13:16.690741+00:00",
+  "started_at": "2026-11-06T17:48:11.144735+00:00",
   "suite": "live",
   "split": "development",
-  "mode": "fixture",
-  "provider": "harbor-fixture-v1",
+  "state": "partial_development_baseline",
+  "mode": "openai_compatible",
+  "provider": "gemini-3.5-flash-lite",
   "embedding": {
-    "provider": "fixture",
+    "provider": "local_lexical",
     "model": "hashed-lexical-demo-v1",
     "dimensions": 64,
-    "endpoint": "fixture",
+    "endpoint": "local",
     "chunking_version": "page-chunks-v1",
     "distance": "cosine",
-    "fingerprint": "fc572408a7b9950d09105baa60ad9172e721ec4892467fa8b777de6dc67b8e21"
+    "fingerprint": "97a7a9861450e2b64371cdae0e4e44678a4cd3d885ee24d7a668c25670e50c92"
   },
-  "results": [],
-  "state": "blocked",
-  "reason": "Configure and check a live generation and embedding provider."
+  "provider_check": {
+    "state": "succeeded",
+    "elapsed_ms": 2492,
+    "provider_calls": [
+      {
+        "job_id": "6a9910a0-3736-49cf-a3ad-4376daf9b17a",
+        "job_kind": "provider_check",
+        "kind": "generation",
+        "provider": "openai_compatible",
+        "model": "gemini-3.5-flash-lite",
+        "state": "succeeded",
+        "duration_ms": 1804,
+        "usage": {
+          "completion_tokens": 9,
+          "prompt_tokens": 21,
+          "total_tokens": 30
+        }
+      }
+    ]
+  },
+  "results": [
+    {
+      "id": "harbor-conflict",
+      "format": "txt",
+      "run_id": "90acbe14-45dd-448b-bbad-0be54e90910b",
+      "job_state": "succeeded",
+      "error_code": null,
+      "elapsed_ms": 2970,
+      "provider_calls": [
+        {
+          "kind": "generation",
+          "provider": "openai_compatible",
+          "model": "gemini-3.5-flash-lite",
+          "state": "succeeded",
+          "duration_ms": 2457,
+          "usage": {
+            "completion_tokens": 295,
+            "prompt_tokens": 1178,
+            "total_tokens": 1473
+          }
+        }
+      ],
+      "outcome": "conflicting_evidence",
+      "outcome_correct": true,
+      "citations_valid": true,
+      "citation_count": 2,
+      "relevant_passages": 3,
+      "retrieval_recalled": 3,
+      "evidence_matched": 2
+    },
+    {
+      "id": "harbor-unanswerable",
+      "format": "txt",
+      "run_id": "c7491ce1-8c44-4157-89a1-4ebdf67cc0ad",
+      "job_state": "succeeded",
+      "error_code": null,
+      "elapsed_ms": 2026,
+      "provider_calls": [
+        {
+          "kind": "generation",
+          "provider": "openai_compatible",
+          "model": "gemini-3.5-flash-lite",
+          "state": "succeeded",
+          "duration_ms": 1360,
+          "usage": {
+            "completion_tokens": 67,
+            "prompt_tokens": 1178,
+            "total_tokens": 1245
+          }
+        }
+      ],
+      "outcome": "insufficient_evidence",
+      "outcome_correct": true,
+      "citations_valid": true,
+      "citation_count": 0,
+      "relevant_passages": 0,
+      "retrieval_recalled": 0,
+      "evidence_matched": 0
+    },
+    {
+      "id": "harbor-wrong-period",
+      "format": "txt",
+      "run_id": "471e3b3a-a573-465e-affb-d1cb52038063",
+      "job_state": "succeeded",
+      "error_code": null,
+      "elapsed_ms": 2757,
+      "provider_calls": [
+        {
+          "kind": "generation",
+          "provider": "openai_compatible",
+          "model": "gemini-3.5-flash-lite",
+          "state": "succeeded",
+          "duration_ms": 2307,
+          "usage": {
+            "completion_tokens": 178,
+            "prompt_tokens": 1178,
+            "total_tokens": 1356
+          }
+        }
+      ],
+      "outcome": "insufficient_evidence",
+      "outcome_correct": true,
+      "citations_valid": true,
+      "citation_count": 1,
+      "relevant_passages": 0,
+      "retrieval_recalled": 0,
+      "evidence_matched": 0
+    },
+    {
+      "id": "harbor-conflict",
+      "format": "pdf",
+      "run_id": "234a000c-f352-4dba-aa6e-97184d074a73",
+      "job_state": "failed",
+      "error_code": "provider_unavailable",
+      "elapsed_ms": 3633,
+      "provider_calls": [
+        {
+          "kind": "generation",
+          "provider": "openai_compatible",
+          "model": "gemini-3.5-flash-lite",
+          "state": "provider_unavailable",
+          "duration_ms": 1242,
+          "usage": {}
+        },
+        {
+          "kind": "generation",
+          "provider": "openai_compatible",
+          "model": "gemini-3.5-flash-lite",
+          "state": "provider_unavailable",
+          "duration_ms": 1222,
+          "usage": {}
+        }
+      ]
+    }
+  ],
+  "metrics": {
+    "attempted_investigations": 4,
+    "successful_text_investigations": 3,
+    "correct_text_outcomes": 3,
+    "valid_text_citations": 3,
+    "conflict_expected_quotation_matches": 2,
+    "conflict_expected_quotation_labels": 3,
+    "generation_attempts": 6,
+    "successful_generation_attempts": 4,
+    "reported_prompt_tokens": 3555,
+    "reported_completion_tokens": 549
+  },
+  "limitations": [
+    "Text conflict case retrieved all three labeled passages but omitted the expected preliminary-estimate context quotation.",
+    "First PDF investigation failed provider_unavailable twice under the existing retry limit; remaining two PDF cases not attempted. No HTTP status or error body was retained, so the provider/network cause is unconfirmed.",
+    "Only successful calls reported usage; failed-attempt consumption is unknown.",
+    "Synthetic development compatibility evidence only; no semantic embeddings, held-out evaluation, second provider or full model acceptance."
+  ],
+  "stopped_reason": "First PDF case failed provider_unavailable after the adapter retry limit; remaining PDF cases not attempted.",
+  "review_export": {
+    "run_id": "90acbe14-45dd-448b-bbad-0be54e90910b",
+    "export_id": "4aef1cc8-d2f5-43be-8a54-fd614f48afa8",
+    "accepted_findings": 2,
+    "review_revision": 2,
+    "state": "ready",
+    "exact_quotes_preserved": true,
+    "model_and_retrieval_provenance_preserved": true
+  }
 }

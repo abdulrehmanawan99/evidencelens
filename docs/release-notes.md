@@ -14,4 +14,4 @@ The default fresh local database uses port55432 and the artifact directory .loca
 
 ## Acceptance boundary
 
-Fixture acceptance is reproducible. Live model/embedding end-to-end compatibility, explanation quality, and two-configuration evaluation remain pending configured providers. No v2 work, GitHub publication, public hosting, or open-source license grant is included.
+Fixture acceptance is reproducible. A later [bounded Gemini text development run](live-validation.md) provides partial live-generation compatibility evidence; PDF generation, semantic embedding quality and broader model acceptance remain incomplete. No v2 work, GitHub publication, public hosting, or open-source license grant is included.

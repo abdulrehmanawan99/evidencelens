@@ -21,7 +21,7 @@ Endpoints must use HTTPS, except an explicit set of trusted local hostnames/loop
 5. Set numeric live interpretation/recall/abstention gates from that development baseline, record model/profile versions, then freeze gates before held-out evaluation.
 6. Repeat with a second real configuration when available.
 
-The current report records live coverage as blocked; neither OpenAI, compatible remote service, nor Ollama was called. Fixture measurements and mocked contract tests are separate evidence. No numeric live quality thresholds or successful live results have been invented.
+A bounded actual Gemini development run is recorded in [live validation](live-validation.md) and [evaluation-live.json](evaluation-live.json). Three text cases succeeded; the first PDF case failed after two unavailable-provider attempts. This is partial compatibility evidence, with an omitted context finding and no semantic-embedding acceptance. Quota (429) and authentication (401/403) errors stop after one request; existing bounded transient-service retries remain.
 
 ## Constrained Gemini generation with local lexical retrieval
 

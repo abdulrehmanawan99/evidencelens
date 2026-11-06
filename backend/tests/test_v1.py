@@ -340,6 +340,34 @@ def test_embedding_response_order_and_dimension_contract(monkeypatch):
     assert vectors==[[1,0,0],[0,1,0]]
 
 
+
+@pytest.mark.parametrize("status,code", [(429, "provider_rate_limited"), (401, "provider_authentication_failed"), (403, "provider_authentication_failed")])
+def test_quota_and_auth_failures_stop_after_one_request(monkeypatch, status, code):
+    remote_settings("openai_compatible")
+    calls = []
+    def handler(request):
+        calls.append(request.url.path)
+        return httpx.Response(status, json={"error": "Do not retry"})
+    monkeypatch.setattr(providers, "transport", httpx.MockTransport(handler))
+    doc, passage = evidence()
+    with pytest.raises(ProviderError, match=code):
+        LiveAdapter().analyze("The total was 42 units.", [doc], [passage])
+    assert calls == ["/v1/chat/completions"]
+
+
+def test_transient_provider_failure_keeps_existing_two_attempt_limit(monkeypatch):
+    remote_settings("openai_compatible")
+    calls = []
+    def handler(request):
+        calls.append(request.url.path)
+        return httpx.Response(503, json={"error": "Unavailable"})
+    monkeypatch.setattr(providers, "transport", httpx.MockTransport(handler))
+    monkeypatch.setattr(providers.time, "sleep", lambda _: None)
+    doc, passage = evidence()
+    with pytest.raises(ProviderError, match="provider_unavailable"):
+        LiveAdapter().analyze("The total was 42 units.", [doc], [passage])
+    assert calls == ["/v1/chat/completions", "/v1/chat/completions"]
+
 def test_provider_refusal_is_not_repaired_or_published(monkeypatch):
     remote_settings()
     doc,passage=evidence()
