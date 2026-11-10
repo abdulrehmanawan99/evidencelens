@@ -50,8 +50,9 @@ supplied source (findings or an explicit exclusion reason), using the response s
   rejection, so this remains a hypothesis. Confirming it needs the error body or a
   schema-only probe, both of which require further live requests.
 
-Consequence: with the current code, live Gemini investigations are expected to fail
-with `provider_request_rejected`. Fixture mode, the evaluation harness and the test
+Consequence: v5 was reverted on 10 November 2026 and the app returned to
+`grounded-evidence-v2`, which completed live requests with HTTP 200 (v2 is not
+re-checked live after the revert). Fixture mode, the evaluation harness and the test
 suite are unaffected. The private local report is `.local/live-api-v5-check.json`
 (status-only HTTP log `.local/live-http-v5-check.jsonl`).
 

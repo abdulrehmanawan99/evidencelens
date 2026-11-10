@@ -73,8 +73,8 @@ README Docker quick start was followed with port and name overrides (`APP_PORT=3
   API health reported ready in fixture mode.
 - The PDF sample workflow through the UI's API proxy reached 4/4 ready sources,
   returned `conflicting_evidence` with three findings, accepted all three, and saved
-  a reviewed export containing all three exact quotations and `grounded-evidence-v5`
-  provenance.
+  a reviewed export containing all three exact quotations (this run used the since-reverted v5 version; fixture
+  results do not depend on it).
 - The Docker Playwright harness above (`E2E_EXTENDED=1`, accessibility on) passed both
   the text and PDF browser workflows with zero axe violations; the screenshots in
   `docs/screenshots/` were retaken from this run.
@@ -88,7 +88,7 @@ The clone's containers, volume and images were removed afterwards.
 
 The checks above are fixture or mocked verification. Live generation has been tested
 only with `gemini-3.5-flash-lite` on synthetic samples with `local_lexical` retrieval;
-the current v5 analysis returned HTTP 400 in its single live check. [Live
+an experimental v5 analysis returned HTTP 400 in its single live check and was reverted to v2. [Live
 validation](live-validation.md) and [evaluation-live.json](evaluation-live.json) record
 the exact call counts, results and limits. No hosted embedding, alternate model,
 held-out result or full AI acceptance is claimed. CI on GitHub Actions is the record
