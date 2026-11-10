@@ -4,7 +4,7 @@ Verified 5 November 2026, Asia/Karachi. This records executed local checks for t
 
 ## Environment
 
-macOS15.8.1 x86_64, Python3.12.14, bundled Node24.19.0, Next16.4.5, React19.3.1, PDF.js6.5.438, pypdf6.21.4, PostgreSQL17 and pgvector0.8.7. The source launcher used UI3001/API8001 and a synthetic browser database. Full Docker verification used separate UI3100/API8100/DB55433, a fresh external test volume, and a private test artifact directory. Existing user processes and the original PostgreSQL14 database were preserved.
+macOS15.8.1 x86_64, Python3.12.14, bundled Node24.19.0, Next16.4.5, React19.3.1, PDF.js6.5.438, pypdf6.21.4, PostgreSQL17 and pgvector0.8.7. The source launcher used UI3001/API8001 and a synthetic browser database. Full Docker verification used separate UI3100/API8100/DB55433, a fresh external test volume, and a private test artifact directory. Other local processes and databases were left untouched.
 
 ## Executed checks
 
@@ -62,8 +62,34 @@ docker run --rm --memory 1536m --cpus 2 --pids-limit 256 --shm-size 256m \
 
 Tests create/delete their own synthetic collections. Screenshots in screenshots/ are real captures, not mockups. example-brief.md was produced through a saved reviewed PDF export; its temporary source collection was removed afterward.
 
+## Fresh-clone check — 10 November 2026
+
+The `chore/complete-v1` branch was cloned from GitHub into an empty directory and the
+README Docker quick start was followed with port and name overrides (`APP_PORT=3020`,
+`API_PORT=8020`, `DB_PORT=55440`, plus `COMPOSE_PROJECT_NAME`, `PGDATA_VOLUME` and
+`DB_CONTAINER_NAME`) because another copy was already running on the defaults.
+
+- `scripts/setup-local.py` and `docker compose --profile app up --build -d` succeeded;
+  API health reported ready in fixture mode.
+- The PDF sample workflow through the UI's API proxy reached 4/4 ready sources,
+  returned `conflicting_evidence` with three findings, accepted all three, and saved
+  a reviewed export containing all three exact quotations and `grounded-evidence-v5`
+  provenance.
+- The Docker Playwright harness above (`E2E_EXTENDED=1`, accessibility on) passed both
+  the text and PDF browser workflows with zero axe violations; the screenshots in
+  `docs/screenshots/` were retaken from this run.
+- `scripts/evaluate.py --suite fixture` passed 6/6 cases with exact citations and 1.0
+  evidence recall; 83 backend tests passed on that instance's disposable
+  `evidencelens_test_local` database; frontend typecheck and production build passed.
+
+The clone's containers, volume and images were removed afterwards.
+
 ## Outstanding acceptance
 
-The original checks above were fixture/mocked verification. On 6 November 2026, actual `gemini-3.5-flash-lite` generation passed the provider check and three text cases with `local_lexical` retrieval. The first PDF case failed after two unavailable-provider attempts; further calls stopped. [Live validation](live-validation.md) and [evaluation-live.json](evaluation-live.json) record the exact call counts, usage, partial quotation recall and remaining limits. No hosted embedding, alternate model, held-out result or full AI acceptance is claimed.
-
-The private GitHub repository and PR1 now exist under abdulrehmanawan99; the user merged PR1. Premerge full CI passed on commit6318266 (run42263424363). Main and follow-up CI remain the source for subsequent results. No public hosting or hosted authentication was added. The isolated local validation launcher remains available for inspecting retained synthetic results; its private call guard is stopped after the PDF failure. Production build/start was verified.
+The checks above are fixture or mocked verification. Live generation has been tested
+only with `gemini-3.5-flash-lite` on synthetic samples with `local_lexical` retrieval;
+the current v5 analysis returned HTTP 400 in its single live check. [Live
+validation](live-validation.md) and [evaluation-live.json](evaluation-live.json) record
+the exact call counts, results and limits. No hosted embedding, alternate model,
+held-out result or full AI acceptance is claimed. CI on GitHub Actions is the record
+for each commit.

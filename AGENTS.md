@@ -43,4 +43,4 @@
   because a handoff lists them as the next milestone.
 - The user authorized private GitHub repositories and PRs under
   `abdulrehmanawan99`; prepare reviewed feature branches, but do not merge/deploy.
-  Prefer free API options; `docs/free-providers.md` records metadata-only discovery.
+  Prefer free API options; `docs/internal/free-providers.md` records metadata-only discovery.
