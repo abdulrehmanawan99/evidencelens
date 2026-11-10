@@ -36,7 +36,7 @@ class Settings:
     max_output_tokens: int = 2000
     provider_timeout: int = 45
     chunking_version: str = "page-chunks-v1"
-    analysis_version: str = "grounded-evidence-v5"
+    analysis_version: str = "grounded-evidence-v2"
     temporary_ttl_seconds: int = 3600
 
 

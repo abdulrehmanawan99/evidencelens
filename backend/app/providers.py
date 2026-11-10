@@ -57,17 +57,10 @@ class ModelFinding(BaseModel):
     explanation: str = Field(min_length=1, max_length=1500)
 
 
-class SourceAssessment(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    source_id: str = Field(min_length=1, max_length=36)
-    findings: list[ModelFinding] = Field(max_length=10)
-    exclusion_reason: str = Field(max_length=1500)
-
-
 class ModelAnalysis(BaseModel):
     model_config = ConfigDict(extra="forbid")
     outcome: Literal["supported_in_sources", "conflicting_evidence", "insufficient_evidence", "uncertain"]
-    source_assessments: list[SourceAssessment] = Field(max_length=12)
+    findings: list[ModelFinding] = Field(max_length=10)
     limitations: str = Field(min_length=1, max_length=2000)
 
 
@@ -123,7 +116,7 @@ def configuration():
         checked_endpoint(settings.generation_endpoint)
         if settings.model_mode == "openai" and not settings.generation_key:
             raise ProviderError("generation_key_missing")
-    return {"mode": settings.model_mode, "generation_model": settings.generation_model if settings.model_mode != "fixture" else "harbor-fixture-v1", "embedding": embedding_configuration(), "analysis_version": settings.analysis_version, "context_tokens": settings.context_tokens, "output_tokens": settings.max_output_tokens, "token_budget_method": "conservative_utf8_bytes", "schema_version": "evidence-v1" if settings.model_mode == "fixture" else "source-assessments-v2"}
+    return {"mode": settings.model_mode, "generation_model": settings.generation_model if settings.model_mode != "fixture" else "harbor-fixture-v1", "embedding": embedding_configuration(), "analysis_version": settings.analysis_version, "context_tokens": settings.context_tokens, "output_tokens": settings.max_output_tokens, "token_budget_method": "conservative_utf8_bytes", "schema_version": "evidence-v1"}
 
 
 def request_json(provider, endpoint, path, model, payload, key, kind, control=None):
@@ -240,14 +233,10 @@ Distinguish support, candidate conflict, and contextual qualifications. Match en
 units, scope, and provisional/final status. A different period or an earlier estimate is not by itself
 a contradiction. Quote exact text from supplied passages. Labels are interpretations for human review,
 not truth guarantees. If sources do not establish a claim, report insufficient_evidence. Include gaps
-and uncertainty in limitations. Include an earlier estimate or forecast for the same entity, period,
-and metric as a separate context finding, even when a final measurement is also supplied. Quote
-the provisional value and its estimate/forecast status, and explain that it is not a final result.
-Omit irrelevant or different-period estimates. Never treat a forecast alone as a contradiction
-of a final total. Assess every supplied source exactly once using its source ID. Return grounded
-findings for relevant sources with an empty exclusion_reason. For a source with no relevant finding,
-return an empty findings array and an explicit exclusion_reason. Every finding needs a supplied
-passage ID from that source and an exact quotation."""
+and uncertainty in limitations. When an earlier estimate or forecast for the same entity, period,
+and metric materially qualifies a final measurement, include it as a separate context finding and
+explain its provisional status. Omit irrelevant estimates and never treat a forecast alone as a
+contradiction of a final total. Every finding needs a supplied passage ID and an exact quotation."""
 
 
 def generate(schema_type, instructions, content, control=None):
@@ -311,32 +300,19 @@ class LiveAdapter:
 
     def analyze(self, claim, sources, passages, control=None):
         source_map = {doc.id: doc for doc in sources}
-        evidence = {}
-        for passage in passages:
-            source = source_map[passage.document_id]
-            if source.id not in evidence:
-                evidence[source.id] = {"id": source.id, "title": source.title, "version": source.version, "passages": []}
-            evidence[source.id]["passages"].append({"id": passage.id, "page": passage.page_number, "text": passage.text})
-        content = json.dumps({"claim": claim, "sources": list(evidence.values())}, ensure_ascii=False)
+        evidence = [{"id": p.id, "source": source_map[p.document_id].title, "version": source_map[p.document_id].version, "page": p.page_number, "text": p.text} for p in passages]
+        content = json.dumps({"claim": claim, "passages": evidence}, ensure_ascii=False)
         for repair in range(2):
             try:
                 result = generate(ModelAnalysis, SYSTEM+("\nA previous response failed validation. Return only exact, supplied evidence and the required JSON schema." if repair else ""), content, control)
                 by_id = {p.id: p for p in passages}
-                source_ids = [assessment.source_id for assessment in result.source_assessments]
-                if len(source_ids) != len(set(source_ids)) or set(source_ids) != set(evidence):
-                    raise ProviderError("invalid_evidence")
-                if sum(len(assessment.findings) for assessment in result.source_assessments) > 10:
-                    raise ProviderError("invalid_evidence")
                 findings = []
-                for assessment in result.source_assessments:
-                    if bool(assessment.findings) == bool(assessment.exclusion_reason.strip()):
+                for finding in result.findings:
+                    passage = by_id.get(finding.passage_id)
+                    if not passage or finding.quote not in passage.text:
                         raise ProviderError("invalid_evidence")
-                    for finding in assessment.findings:
-                        passage = by_id.get(finding.passage_id)
-                        if not passage or passage.document_id != assessment.source_id or finding.quote not in passage.text:
-                            raise ProviderError("invalid_evidence")
-                        start = passage.text.index(finding.quote)
-                        findings.append({**finding.model_dump(), "quote_start": start, "quote_end": start+len(finding.quote)})
+                    start = passage.text.index(finding.quote)
+                    findings.append({**finding.model_dump(), "quote_start": start, "quote_end": start+len(finding.quote)})
                 relations = {f["relation"] for f in findings}
                 if (result.outcome == "conflicting_evidence" and "conflicts" not in relations) or (result.outcome == "supported_in_sources" and "supports" not in relations) or (result.outcome == "insufficient_evidence" and relations.intersection({"supports", "conflicts"})):
                     raise ProviderError("invalid_evidence")

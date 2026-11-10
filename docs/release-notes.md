@@ -4,7 +4,7 @@
 
 This update completes the remaining local implementation after the initial text/fixture slice: PDF parsing/rendering, versioned sources, pgvector hybrid retrieval, live adapter contracts, confirmed claims/revisions, stored exports/provenance, stronger jobs/limits/cleanup, browser checks, Docker setup, and measured fixture evaluation.
 
-The source and all project development now live directly at /Users/apple/Desktop/evidencelens. Existing original PostgreSQL data was copied into a separate pgvector development database before migration; the older PostgreSQL installation was preserved. The source-build output uses .next-v1 so an older running frontend's .next is preserved.
+The source build writes to `.next-v1`, so an older frontend build in `.next` is left alone.
 
 ## Upgrade
 
@@ -14,4 +14,4 @@ The default fresh local database uses port55432 and the artifact directory .loca
 
 ## Acceptance boundary
 
-Fixture acceptance is reproducible. A later [bounded Gemini text development run](live-validation.md) provides partial live-generation compatibility evidence; PDF generation, semantic embedding quality and broader model acceptance remain incomplete. No v2 work, GitHub publication, public hosting, or open-source license grant is included.
+Fixture acceptance is reproducible. [Bounded Gemini development runs](live-validation.md) provide partial live-generation compatibility evidence; the current v5 analysis was rejected by Gemini (HTTP 400), and PDF generation, semantic embedding quality and broader model acceptance remain incomplete. No v2 work or public hosting is included.

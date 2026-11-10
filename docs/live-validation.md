@@ -1,4 +1,62 @@
-# Bounded Gemini development validation
+# Live Gemini validation
+
+All live checks used only `gemini-3.5-flash-lite` through the OpenAI-compatible chat
+adapter, synthetic sample documents, and the `local_lexical` retrieval profile (no
+embedding API calls). Every session ran through the real API and durable worker with
+a private, ignored call-budget guard that capped HTTP requests and stopped on the
+first quota, authentication or service failure. No result below is a general quality
+claim; these are a handful of small development cases.
+
+## Summary
+
+| Date | Analysis version | Requests | Result |
+| --- | --- | --- | --- |
+| 6 Nov 2026 | v1 | 6 | Provider check + 3 text cases succeeded (all outcomes correct, quotes exact; conflict case 2/3 expected quotes). First PDF case: 2 × `provider_unavailable`. |
+| 6 Nov 2026 | v2 | 2 | PDF and text conflict diagnostics both HTTP 503. |
+| 6 Nov 2026 | v2 | 1 | Text conflict: HTTP 200, correct outcome, 2/3 expected quotes. |
+| 6 Nov 2026 | v3 | 1 | Text conflict: HTTP 200, 2/3 expected quotes. |
+| 6 Nov 2026 | v3 | 1 | PDF conflict: HTTP 200, 3/3 expected quotes including the preliminary-estimate context. |
+| 6 Nov 2026 | v4 | 1 | Text conflict: HTTP 200, 2/3 expected quotes. |
+| 10 Nov 2026 | v5 | 1 | Text conflict: **HTTP 400** (`provider_request_rejected`), no output to score. |
+
+Total external requests: 13. The text conflict case has never reached 3/3 expected
+quotations; the only 3/3 result was one PDF run under v3.
+
+## v5 per-source assessment check (10 November 2026)
+
+`grounded-evidence-v5` asks the model to return one `source_assessments` entry per
+supplied source (findings or an explicit exclusion reason), using the response schema
+`source-assessments-v2`. It had passed fixture and unit tests only.
+
+- Setup: a fresh Docker database from a clean clone of the branch, the synthetic text
+  sample collection, and a source-run API plus guarded worker started with the key
+  only in their process environment. A new versioned budget file
+  (`.local/live-call-budget-v5-check.json`, limit 3, one HTTP request per job) was
+  created; the earlier session guards were left untouched.
+- Case: development `harbor-conflict` (text), claim "Harbor Transit recorded 1.20
+  million journeys in Q2.", expected `conflicting_evidence` with support, conflict and
+  context quotations.
+- Result: **one HTTP request, status 400**, recorded as `provider_request_rejected`
+  after 31,478 ms provider time (32,017 ms end to end). No findings were returned, so
+  the existing scorer (`score_evidence` in `scripts/evaluate.py`) had nothing to score:
+  outcome and quotation recall are not available, not 0/3 or 3/3.
+- The guard stopped after the failure. No retry, prompt change or second request was
+  made; 2 of the 3 permitted requests were left unused.
+- Cause: unconfirmed. By design the app keeps only the numeric HTTP status, not the
+  response body. A plausible but untested explanation is that Gemini's
+  OpenAI-compatible endpoint rejects the v5 nested response schema (findings nested
+  inside per-source objects), since v4 (flat findings list, same model and endpoint)
+  returned HTTP 200. The 31-second delay before the 400 is unusual for a schema
+  rejection, so this remains a hypothesis. Confirming it needs the error body or a
+  schema-only probe, both of which require further live requests.
+
+Consequence: v5 was reverted on 10 November 2026 and the app returned to
+`grounded-evidence-v2`, which completed live requests with HTTP 200 (v2 is not
+re-checked live after the revert). Fixture mode, the evaluation harness and the test
+suite are unaffected. The private local report is `.local/live-api-v5-check.json`
+(status-only HTTP log `.local/live-http-v5-check.jsonl`).
+
+## Original session details (6 November 2026)
 
 Executed 6 November 2026 through the actual API and durable worker, using only
 `gemini-3.5-flash-lite` through the compatible chat adapter. Retrieval used the
@@ -8,13 +66,11 @@ explicit `local_lexical` profile: `hashed-lexical-demo-v1`, 64 dimensions, endpo
 No hosted embedding or alternate model was called. This provides partial live
 generation compatibility evidence; it is not semantic embedding acceptance.
 
-The isolated validation database on port55435 and
-`.local/resume-validation-artifacts` were used. The original `.env`, artifacts
-and backup were preserved. A private runtime harness restricted the model and
+A separate validation database and artifact directory were used. A private runtime harness restricted the model and
 endpoint, capped the session at eight external attempts, and stopped further
 calls after any quota/authentication error. Six attempts were made in total.
 
-## Actual results
+### Actual results
 
 - Provider check succeeded with one generation request and local vector creation.
   Its job completed in2,492ms; provider time was1,804ms.
@@ -42,11 +98,11 @@ Both exact quotations in the successful text conflict case were inspected and
 accepted through the review API, with explicit synthetic-development notes. A
 saved reviewed Markdown export preserved both quotations and the Gemini/local
 lexical provenance. This required no further model calls. Results and the failed
-PDF run remain in the isolated instance; private detailed reports and the exported
+PDF run remain in the validation instance; private detailed reports and the exported
 brief are in `.local/live-api-validation.json` and `.local/live-reviewed-brief.md`.
 The committed [summary](evaluation-live.json) contains sanitized measured results.
 
-## Verification and limits
+### Verification and limits
 
 Quota429 now fails after one request, as authentication401/403 already did. Ten
 focused backend regressions passed against disposable
@@ -57,15 +113,14 @@ build passed. No application database was used for destructive tests.
 
 These are small synthetic development cases. No prompt tuning, repeated
 successful inference, held-out evaluation, second-provider result or general
-quality claim is included. A second model/provider is outside the current exact
-model authorization. Remaining live PDF behavior and the missing context finding
+quality claim is included. No second model or provider was tested. Remaining live PDF behavior and the missing context finding
 are recorded gaps; do not replace this partial result with fixture scores.
 
 
-## Second diagnostic session
+### Second diagnostic session
 
-The user authorized a new bounded session after the original records were
-preserved. No old budget or result was overwritten. Offline comparison found
+A new bounded session was started after the original records were preserved.
+No old budget or result was overwritten. Offline comparison found
 11 text paragraphs versus4 PDF page passages; the per-source nonempty line
 multisets matched exactly. Both formats supplied the preliminary estimate, so
 there is no evidence of parser text loss behind the omitted context finding.
@@ -98,7 +153,7 @@ exact citations, plus3/3 expected conflict quotations, before final numeric gate
 are frozen for the existing five-case held-out split. The earlier2/3 quotation
 baseline is not an acceptance target. Gate freezing and held-out execution remain
 pending this unresolved prerequisite; no held-out result has been manufactured.
-A second provider/model and semantic embeddings remain outside authorization.
+A second provider/model and semantic embeddings were not tested.
 
 Private session2 records are `.local/live-api-session2.json`,
 `.local/live-http-session2.jsonl` and `.local/live-call-budget-session2.json`.
@@ -114,11 +169,11 @@ and five offline evaluation-scoring/control tests. No hosted requests were used
 by those checks. The evaluator now stops after its first failed live investigation
 and writes the failed result, rather than continuing into more cases. `--format`
 selects text or PDF development cases separately; its default preserves both.
-The isolated instance's production frontend build also completed during restart.
+The validation instance's production frontend build also completed during restart.
 
 [Draft numeric gates](live-quality-gates.json) retain the observed baseline and
 explicitly record that freezing is blocked. After service availability returns
-and a new bounded session is deliberately authorized/prepared, the existing
+and a new bounded session is deliberately prepared, the existing
 workflow can be staged as follows (these commands were not executed in session2):
 
 ```bash
@@ -131,4 +186,12 @@ workflow can be staged as follows (these commands were not executed in session2)
 Keep a separately measured worker request budget and single-request diagnostic
 control: script fail-fast prevents subsequent investigations, while provider
 request/repair limits apply inside an investigation. The current session2 guard
-remains stopped; these reproduction commands do not authorize resetting it.
+remains stopped; these reproduction commands do not reset it.
+
+### Later single-request probes (6 November 2026)
+
+Four further one-request sessions, each with its own budget file, tested prompt and
+payload changes on the conflict case: v2 text (2/3 quotes), v3 text (2/3), v3 PDF (3/3,
+including the preliminary-estimate context) and v4 grouped-by-source input, text (2/3).
+All returned HTTP 200 with correct outcomes and exact quotations. A v5 budget prepared
+at the end of that day was never used; the 10 November check above used a fresh one.

@@ -1,39 +1,73 @@
 # EvidenceLens
 
-A private, local PDF/text reading room for investigating claims, comparing conflicting reports, reviewing exact source citations, and saving cited Markdown briefs.
+A local reading room for checking a claim against a set of PDF or text reports. EvidenceLens finds the passages that support, contradict or qualify the claim, links every finding to the exact quoted text, lets you accept or dismiss each one, and exports a cited Markdown brief.
 
-**Local v1 functionality is implemented. Bounded Gemini text validation succeeded; broader live AI acceptance remains incomplete.** See the [actual results and limitations](docs/live-validation.md). Fixture mode is a reproducible demonstration with synthetic reports and predefined interpretations; its results do not establish model quality.
+## Problem and user
 
-![Evidence board](docs/screenshots/evidence-board.png)
+Analysts, researchers and editors often receive several reports that disagree: a preliminary estimate, a final figure, a board summary with a different number. Checking a single claim means reading all of them and copying quotes by hand. EvidenceLens is for one person on their own machine who needs to answer "what do my sources actually say about this claim?" with exact citations, and who wants a human review step before anything is written down.
 
-## Included
+Everything runs locally (PostgreSQL + pgvector, FastAPI, Next.js). A built-in fixture mode demonstrates the full workflow with synthetic reports and no model key. A live mode sends selected passages to a model you configure.
 
-- PDF and UTF-8 text ingestion, preserved originals, page/line references, checksums, extraction warnings, and durable cancellable jobs.
-- Immutable source versions, replacement, retained-version reading/restoration, stale-result invalidation, retries, and deletion of derived artifacts.
-- PostgreSQL/pgvector hybrid retrieval, versioned embedding profiles, explicit reindexing, retrieval traces, and bounded context.
-- Server-configured OpenAI Responses, OpenAI-compatible chat, and Ollama adapters; separate generation/embedding settings, capability checks, structured output validation, and provider usage/error traces.
-- Confirmed claims and revisions, optional claim suggestions, supporting/conflicting/context evidence, uncertainty, and insufficient-evidence outcomes.
-- Review decisions and notes with revision checks, history, persisted draft/reviewed exports, frozen provenance, and guarded downloads.
-- Responsive editorial interface, keyboard tabs, same-origin PDF worker/assets, and automated accessibility/browser checks.
+## Features
 
-## Start with Docker
+- PDF and UTF-8 text ingestion with page/line references, checksums and extraction warnings; originals are kept unchanged.
+- Source versions: replace a source, read or restore retained versions; results that depend on changed sources are marked stale.
+- Hybrid keyword + vector retrieval over pgvector, with a visible retrieval trace for every run.
+- Claim investigation with outcomes `supported_in_sources`, `conflicting_evidence`, `insufficient_evidence` or `uncertain`. Findings are labelled supporting, conflicting or context, and every quote is checked against the stored passage text.
+- Accept/dismiss each finding with notes and history, then export a reviewed (or labelled draft) Markdown brief with frozen provenance.
+- Live generation through OpenAI, any OpenAI-compatible chat API (for example Gemini), or Ollama. Keys stay in server-side `.env`, never in the browser.
+- Responsive interface with a PDF canvas reader, keyboard-navigable tabs and automated accessibility checks.
 
-Use Docker Desktop/Compose and Python 3 for the setup helper. Run from this project directory:
+## Screenshots
+
+Desktop evidence board after investigating the sample claim and accepting a finding:
+
+![Desktop evidence board](docs/screenshots/evidence-board.png)
+
+Mobile reading room (390 px wide):
+
+<img src="docs/screenshots/mobile-reading-room.png" alt="Mobile reading room" width="320">
+
+## Quick start (fixture mode, no key)
+
+Requirements: Docker Desktop (or Docker Engine with Compose v2) and Python 3.
 
 ```bash
+git clone https://github.com/abdulrehmanawan99/evidencelens.git
+cd evidencelens
 python3 scripts/setup-local.py
 docker compose --profile app up --build -d
 ```
 
-Open [the local app](http://127.0.0.1:3000). Choose **Open PDF sample**, wait for four ready sources, investigate the default claim, open each citation, accept evidence, and export a reviewed brief. Fixture mode needs no model key.
+The setup helper creates a private `.env` from `.env.example`, a local artifact directory (`.local/v1-artifacts`) and the Docker volume `evidencelens_v1_pgdata`. The first build takes a few minutes.
 
-Only loopback ports 3000 (UI), 8000 (API), and 55432 (database) are published. The API migrates before the worker/UI start. App containers run without root, with read-only filesystems and bounded memory. No Docker socket is mounted into them.
+Open <http://127.0.0.1:3000>, then:
 
-Stop with `docker compose --profile app stop`. Database volume `evidencelens_v1_pgdata` and private originals in `.local/v1-artifacts` persist. To use different ports set `APP_PORT`, `API_PORT`, and `DB_PORT` in ignored `.env`, then recreate containers. Never point two independent installations at the same artifact directory.
+1. Choose **Open PDF sample** and wait for "4 of 4 sources ready".
+2. Choose **Investigate claim** to check the default claim. Fixture mode reports conflicting evidence with three findings.
+3. Choose **Read in source** on a finding to see the exact highlighted passage in the PDF.
+4. **Accept** the findings you agree with, then choose **Export reviewed brief** to download the Markdown brief.
 
-## Run from source
+Stop with `docker compose --profile app stop`. Data persists in the volume and `.local/v1-artifacts`. To remove everything: `docker compose --profile app down`, then `docker volume rm evidencelens_v1_pgdata` and delete `.local/`.
 
-Requires Python 3.12, Node.js 22.13+ (24 recommended), npm, and PostgreSQL 17 with pgvector. On macOS, Docker also isolates PDF parsing. On Linux, parsing uses a subprocess with resource limits.
+Only loopback ports are published: 3000 (UI), 8000 (API), 55432 (database). App containers run as your user, with read-only filesystems, no Linux capabilities and memory limits.
+
+**Different ports or a second copy.** Before running setup, create `.env` from `.env.example` and add overrides, for example:
+
+```dotenv
+APP_PORT=3020
+API_PORT=8020
+DB_PORT=55440
+COMPOSE_PROJECT_NAME=evidencelens-second
+PGDATA_VOLUME=evidencelens_second_pgdata
+DB_CONTAINER_NAME=evidencelens-second-db
+```
+
+Then run the two commands above. Never point two installations at the same artifact directory or database volume.
+
+### Run from source instead
+
+Requires Python 3.12, Node.js 22.13+ (24 recommended) and Docker for the database (or PostgreSQL 17 with pgvector).
 
 ```bash
 python3.12 -m venv .venv
@@ -44,74 +78,117 @@ docker compose up -d db
 .venv/bin/python scripts/run-local.py --production
 ```
 
-The launcher reads ignored `.env`, migrates the database, prepares local PDF assets, builds the UI, and starts the API, worker, and UI. Ctrl+C stops its own children. It refuses occupied ports; use `--port 3001 --api-port 8001` for another instance. Set `NODE_EXECUTABLE` if your supported Node binary is outside PATH. For development, omit `--production`.
+The launcher reads `.env`, migrates the database, builds the UI and starts the API, worker and UI; Ctrl+C stops them. Use `--port 3001 --api-port 8001` if the default ports are busy, and set `NODE_EXECUTABLE` if your Node binary is not on PATH. On macOS, source runs parse PDFs inside a small Docker container; on Linux they use a resource-limited subprocess. Do not run the source launcher and the app containers against the same database.
 
-Do not mix a source launcher and full app containers on the same database/ports. Existing PostgreSQL installations need the vector extension installed by an administrator; application migrations intentionally do not escalate privileges.
+## Use your own Gemini key
 
-## Configure live models
+This uses Gemini for generation and the built-in `local_lexical` retrieval profile, so no embedding API is called. It is the only live configuration that has been tested (see [Limitations](#limitations)).
 
-All settings belong in ignored server-side `.env`; no keys are entered in the browser or committed to Git. Fixture is the default.
+1. Create an API key in [Google AI Studio](https://aistudio.google.com/apikey). The free tier is enough for a few test investigations.
+2. Open the `.env` file created by setup (it is git-ignored and readable only by you) and add or replace these lines:
+
+   ```dotenv
+   MODEL_MODE=openai_compatible
+   GENERATION_MODEL=gemini-3.5-flash-lite
+   GENERATION_ENDPOINT=https://generativelanguage.googleapis.com/v1beta/openai
+   GENERATION_API_KEY=paste-your-key-here
+   EMBEDDING_PROVIDER=local_lexical
+   EMBEDDING_MODEL=hashed-lexical-demo-v1
+   EMBEDDING_ENDPOINT=local
+   EMBEDDING_DIMENSIONS=64
+   EMBEDDING_API_KEY=
+   CONTEXT_TOKENS=16000
+   ```
+
+3. Restart so the API and worker read the new settings: `docker compose --profile app up -d` (Docker) or stop and rerun `run-local.py` (source).
+4. Reload the UI. The provider bar should say "Live model configuration" and show `gemini-3.5-flash-lite` with `retrieval: local_lexical`. Choose **Check provider** (one generation request).
+5. For collections created before the switch, choose **Rebuild search index**. New collections are indexed automatically.
+6. Start with the synthetic samples. Live mode sends the claim and selected source passages to Google; do not upload documents you are not allowed to share with that service.
+
+To go back to fixture mode, set `MODEL_MODE=fixture` and restart.
+
+### Other OpenAI-compatible providers
+
+The same adapter works with any provider that offers `/chat/completions` with strict JSON-schema `response_format` (and, for embeddings, an OpenAI-style `/embeddings` endpoint). Set:
 
 ```dotenv
-MODEL_MODE=openai
-GENERATION_MODEL=your-structured-output-model
-GENERATION_ENDPOINT=https://api.openai.com/v1
-OPENAI_API_KEY=your-private-key
-EMBEDDING_PROVIDER=openai
-EMBEDDING_MODEL=text-embedding-3-small
-EMBEDDING_ENDPOINT=https://api.openai.com/v1
-EMBEDDING_DIMENSIONS=1536
-CONTEXT_TOKENS=16000
+MODEL_MODE=openai_compatible        # or openai for the OpenAI Responses API, or ollama
+GENERATION_MODEL=provider-model-id
+GENERATION_ENDPOINT=https://provider.example/v1
+GENERATION_API_KEY=your-key
+# Keep EMBEDDING_PROVIDER=local_lexical, or use hosted embeddings:
+EMBEDDING_PROVIDER=openai_compatible
+EMBEDDING_MODEL=provider-embedding-id
+EMBEDDING_ENDPOINT=https://provider.example/v1
+EMBEDDING_API_KEY=your-key
+EMBEDDING_DIMENSIONS=1536           # the model's real output size
 ```
 
-Separate `GENERATION_API_KEY` and `EMBEDDING_API_KEY` override `OPENAI_API_KEY`. For compatible APIs use `MODEL_MODE=openai_compatible` and/or `EMBEDDING_PROVIDER=openai_compatible`. They must support strict JSON schema and the embedding request contract. For Ollama use `ollama`, set both model IDs and actual embedding dimensions, and use endpoints such as `http://127.0.0.1:11434` (source run) or `http://host.docker.internal:11434` (Docker).
+For Ollama, use `ollama` for both settings and the endpoint `http://127.0.0.1:11434` (source run) or `http://host.docker.internal:11434` (Docker). Endpoints must be HTTPS except for loopback/local hosts. **Check provider** verifies the contract; it does not prove output quality. Details: [provider setup](docs/providers.md).
 
-For the current Gemini-only authorization, use the exact `gemini-3.5-flash-lite` generation profile with `EMBEDDING_PROVIDER=local_lexical` in [provider setup](docs/providers.md#constrained-gemini-generation-with-local-lexical-retrieval). Local lexical retrieval makes no embedding API calls and does not provide semantic embeddings.
+## Tests
 
-Restart API/worker after configuration changes. Choose **Check provider**, then **Rebuild search index** for existing sources. A configured provider is not a quality guarantee. Live mode sends selected document excerpts and claims to the configured services. Fixture mode makes no model calls. See [provider setup and evaluation](docs/providers.md).
-
-## Verify
-
-Tests require a disposable database named `evidencelens_test_*`; they delete its application rows. The database initializer supplies `evidencelens_test_local`.
+Backend tests delete application rows, so they must use a disposable database whose name starts with `evidencelens_test_`. The Docker database creates `evidencelens_test_local` for this.
 
 ```bash
+docker compose up -d db
 export TEST_DATABASE_URL=postgresql+psycopg://evidencelens:evidencelens_local@127.0.0.1:55432/evidencelens_test_local
 cd backend
 DATABASE_URL="$TEST_DATABASE_URL" ../.venv/bin/python -m alembic upgrade head
-../.venv/bin/python -m pytest -q --basetemp=../.local/test-run
-cd ../apps/web
-npm run typecheck
-npm run build
-npx playwright install --with-deps chromium
-E2E_ACCESSIBILITY=1 npm run test:e2e
-E2E_ACCESSIBILITY=1 node e2e-pdf.mjs
+../.venv/bin/python -m pytest -q
+cd ..
+.venv/bin/python -m unittest discover -s scripts -p test_evaluate.py
+
+cd apps/web
+npm run typecheck && npm run build
 ```
 
-Browser tests require the app and worker running. They create/delete only their own collections and save actual screenshots. The Docker browser harness and measured results are documented in [verification](docs/verification.md). CI is supplied; no GitHub Actions run is claimed until this repo is pushed.
+With the app running in fixture mode:
 
 ```bash
-.venv/bin/python scripts/evaluate.py --suite fixture --output docs/evaluation-fixture.json
-.venv/bin/python scripts/evaluate.py --suite live --output docs/evaluation-live.json
-.venv/bin/python scripts/benchmark.py --output docs/performance-fixture.json
+# Six-case fixture evaluation through the public API (creates and deletes its own collections)
+.venv/bin/python scripts/evaluate.py --api http://127.0.0.1:8000 --suite fixture --output .local/evaluation-fixture.json
+# Browser workflows (also rewrite docs/screenshots)
+cd apps/web && npx playwright install chromium
+E2E_BASE_URL=http://127.0.0.1:3000 E2E_ACCESSIBILITY=1 npm run test:e2e
+E2E_BASE_URL=http://127.0.0.1:3000 E2E_ACCESSIBILITY=1 node e2e-pdf.mjs
 ```
 
-The live command exits with status 2 and records blocked coverage when fixture mode is active. A small fixture benchmark measures this workload only.
+A Dockerised Playwright harness that needs no local browser is in [verification](docs/verification.md#reproduce-browser-verification). GitHub Actions runs all of the above on every pull request.
 
-## Contracts and limits
+## Limitations
 
-[Local API docs](http://127.0.0.1:8000/docs) describe endpoints. Regenerate frontend contracts with `.venv/bin/python scripts/export-openapi.py` and `npm run api:generate --prefix apps/web`.
+- **Live AI quality is not established.** Live generation was tested only with `gemini-3.5-flash-lite` on a few synthetic samples, using lexical (not semantic) retrieval. Earlier analysis versions produced correct outcomes and exact quotes on three text cases but missed one expected context quote. An experimental `grounded-evidence-v5` version was rejected by Gemini with HTTP 400 and has been reverted; the app uses `grounded-evidence-v2`, which completed live requests with HTTP 200. Live PDF investigations were only partially exercised. See [live validation](docs/live-validation.md).
+- Fixture mode answers only the three bundled sample claims. Its results are predefined and do not measure model quality.
+- `local_lexical` retrieval is word-count hashing, not semantic search.
+- Scanned PDFs without a text layer are rejected (no OCR). PDF reading order can differ from the visual layout.
+- Limits: 20 MiB per file, 100 PDF pages, 500,000 extracted characters per file, 25 sources and 100 MiB per collection, 10 retained versions per source.
+- Single-user local installation: there are no accounts, and the app is not meant to be exposed beyond `127.0.0.1`. Downloaded briefs and backups are outside the app's control once saved.
 
-Uploads use a streamed raw body with `X-Filename` and a PDF/text Content-Type. Limits: 20 MiB/file, 100 PDF pages, 500,000 extracted characters/file, 25 source families/collection, 10 retained versions/source, 100 MiB retained source bytes/collection, 5,000 active passages, 50 pending jobs/collection, two concurrent investigations/collection, and 100 exports/collection. PDF scans require OCR and are rejected when no text is extractable; OCR is outside v1. Reading order can differ from the visual PDF layout. Parser memory, decoded content, time, model output, calls, context, and retries are bounded.
+## Troubleshooting
 
-Local access belongs to one OS-controlled installation. There are no hosted accounts or public access controls. Deletion revokes access immediately, then a worker removes originals and derived content; downloaded briefs and backups remain outside app control.
+| Symptom | Fix |
+| --- | --- |
+| `external volume "evidencelens_v1_pgdata" not found` | Run `python3 scripts/setup-local.py` first; it creates the volume. |
+| `port is already allocated` / address in use | Set `APP_PORT`, `API_PORT`, `DB_PORT` in `.env` and run `docker compose --profile app up -d` again. |
+| `container name "/evidencelens-v1-db" is already in use` | Another copy is running. Set `COMPOSE_PROJECT_NAME`, `DB_CONTAINER_NAME` and `PGDATA_VOLUME` as shown above. |
+| Provider bar says "Configuration incomplete" | A setting is missing or invalid (for example an `http://` remote endpoint, a missing model ID or wrong embedding dimensions). Fix `.env` and restart. |
+| Investigation fails with `provider_request_rejected` | The provider returned HTTP 4xx for the request. With the current analysis version this is the known Gemini HTTP 400 described under Limitations. |
+| `provider_rate_limited` or `provider_authentication_failed` | Quota exhausted or key invalid. The app stops after one request and does not retry. |
+| Investigating your own claim fails in fixture mode | Fixture mode only knows the three sample claims (listed under "Sample claims supported in fixture mode"); use a live provider for other claims. |
+| PDF upload rejected as having no text | The PDF is a scan; OCR is not supported. |
+| Next.js warns about Rosetta on Apple Silicon | Harmless; it means an x86-64 Node binary is installed. |
 
-## Project records
+API documentation is served at <http://127.0.0.1:8000/docs> while the app runs.
 
-- [Implementation status](docs/status.md)
+## Documentation
+
 - [Architecture](docs/architecture.md)
+- [Provider setup and evaluation](docs/providers.md)
+- [Live validation results](docs/live-validation.md)
+- [Verification record](docs/verification.md)
 - [Threat model and retention](docs/threat-model.md)
-- [Verification and remaining acceptance](docs/verification.md)
-- [Release notes](docs/release-notes.md)
+- [Implementation status](docs/status.md)
+- [Release checks](docs/release-checks.md) and [release notes](docs/release-notes.md)
+- [Example exported brief](docs/example-brief.md)
 - [Dependency/license inventory](docs/licenses.json)
-
-The repository is on the Desktop. No GitHub publication, hosting, or project-wide open-source license grant is implied.

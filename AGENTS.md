@@ -16,7 +16,7 @@
 ## Resume and current scope
 
 - Canonical repository: `/Users/apple/Desktop/evidencelens`.
-- Read `CODEX_HANDOFF.md`, `README.md`, and relevant `docs/` before changing behavior.
+- Read `docs/internal/CODEX_HANDOFF.md`, `README.md`, and relevant `docs/` before changing behavior.
   Portfolio scope reference: `/Users/apple/Downloads/Ten_AI_Applications_PRD.md`.
   This file and current user instructions override outdated delivery policies.
 - Local v1 is implemented; real generation/embedding integration and quality
@@ -43,4 +43,4 @@
   because a handoff lists them as the next milestone.
 - The user authorized private GitHub repositories and PRs under
   `abdulrehmanawan99`; prepare reviewed feature branches, but do not merge/deploy.
-  Prefer free API options; `docs/free-providers.md` records metadata-only discovery.
+  Prefer free API options; `docs/internal/free-providers.md` records metadata-only discovery.
