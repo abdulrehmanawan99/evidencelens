@@ -297,7 +297,7 @@ def evidence():
 def test_live_generation_adapters_validate_actual_request_contracts(monkeypatch,mode):
     remote_settings(mode)
     doc,passage=evidence()
-    answer={"outcome":"supported_in_sources","findings":[{"passage_id":passage.id,"relation":"supports","quote":passage.text,"explanation":"The passage states the total."}],"limitations":"Selected sources only."}
+    answer={"outcome":"supported_in_sources","source_assessments":[{"source_id":doc.id,"findings":[{"passage_id":passage.id,"relation":"supports","quote":passage.text,"explanation":"The passage states the total."}],"exclusion_reason":""}],"limitations":"Selected sources only."}
     requests=[]
     def handler(request):
         payload=json.loads(request.content);requests.append(payload)
@@ -314,13 +314,93 @@ def test_live_generation_adapters_validate_actual_request_contracts(monkeypatch,
     assert result.findings[0]["quote_start"]==0 and len(requests)==1
 
 
+
+def test_generation_groups_interleaved_passages_by_source_identity_and_version(monkeypatch):
+    remote_settings("openai_compatible")
+    earlier = SimpleNamespace(id=uid(), title="Quarterly report", version=1)
+    final = SimpleNamespace(id=uid(), title="Quarterly report", version=2)
+    unselected = SimpleNamespace(id=uid(), title="Quarterly report", version=3)
+    def passage(source, text, page):
+        return SimpleNamespace(id=uid(), document_id=source.id, text=text, page_number=page)
+    header_a = passage(earlier, "Preliminary forecast; not a final measurement.", 1)
+    metric_b = passage(final, "Final total was 42 units.", 2)
+    metric_a = passage(earlier, "The forecast was 40 units.", 3)
+    header_b = passage(final, "Final complete-period measurement.", 1)
+    selected = [header_a, metric_b, metric_a, header_b]
+    seen = []
+    def handler(request):
+        payload = json.loads(request.content)
+        content = json.loads(payload["messages"][1]["content"])
+        seen.append(content)
+        assert content == {"claim": "The final total was 42 units.", "sources": [
+            {"id": earlier.id, "title": earlier.title, "version": 1, "passages": [{"id": p.id, "page": p.page_number, "text": p.text} for p in [header_a, metric_a]]},
+            {"id": final.id, "title": final.title, "version": 2, "passages": [{"id": p.id, "page": p.page_number, "text": p.text} for p in [metric_b, header_b]]},
+        ]}
+        answer = {"outcome": "supported_in_sources", "source_assessments": [
+            {"source_id": final.id, "findings": [{"passage_id": metric_b.id, "relation": "supports", "quote": metric_b.text, "explanation": "Final measurement."}], "exclusion_reason": ""},
+            {"source_id": earlier.id, "findings": [{"passage_id": metric_a.id, "relation": "context", "quote": metric_a.text, "explanation": "Earlier forecast from the distinct earlier source."}], "exclusion_reason": ""},
+        ], "limitations": "Only selected passages were supplied."}
+        return httpx.Response(200, json={"choices": [{"finish_reason": "stop", "message": {"content": json.dumps(answer)}}]})
+    monkeypatch.setattr(providers, "transport", httpx.MockTransport(handler))
+    result = LiveAdapter().analyze("The final total was 42 units.", [final, unselected, earlier], selected)
+    assert len(seen) == 1
+    assert [finding["passage_id"] for finding in result.findings] == [metric_b.id, metric_a.id]
+    assert all(finding["quote_start"] == 0 and finding["quote_end"] == len(finding["quote"]) for finding in result.findings)
+
+
+@pytest.mark.parametrize("defect", ["missing_source", "duplicate_source", "foreign_source", "wrong_source_passage", "foreign_passage", "invented_quote", "unexplained_exclusion", "finding_and_exclusion", "global_finding_limit", "outcome_without_support"])
+def test_source_assessment_contract_rejects_incomplete_or_misattributed_evidence(monkeypatch, defect):
+    remote_settings("openai_compatible")
+    first, first_passage = evidence()
+    second, second_passage = evidence()
+    answer = {"outcome": "supported_in_sources", "source_assessments": [
+        {"source_id": first.id, "findings": [{"passage_id": first_passage.id, "relation": "supports", "quote": first_passage.text, "explanation": "Supplied exact measurement."}], "exclusion_reason": ""},
+        {"source_id": second.id, "findings": [], "exclusion_reason": "This source has no relevant evidence for the selected claim."},
+    ], "limitations": "Selected sources only."}
+    assessments = answer["source_assessments"]
+    if defect == "missing_source": assessments.pop()
+    elif defect == "duplicate_source": assessments[1]["source_id"] = first.id
+    elif defect == "foreign_source": assessments[1]["source_id"] = uid()
+    elif defect == "wrong_source_passage": assessments[0]["findings"][0]["passage_id"] = second_passage.id
+    elif defect == "foreign_passage": assessments[0]["findings"][0]["passage_id"] = uid()
+    elif defect == "invented_quote": assessments[0]["findings"][0]["quote"] = "Invented final measurement."
+    elif defect == "unexplained_exclusion": assessments[1]["exclusion_reason"] = "  "
+    elif defect == "finding_and_exclusion": assessments[0]["exclusion_reason"] = "Excluded despite these findings."
+    elif defect == "global_finding_limit":
+        assessments[0]["findings"] *= 6
+        assessments[1]["findings"] = [{"passage_id": second_passage.id, "relation": "context", "quote": second_passage.text, "explanation": "Supplied context."}] * 5
+        assessments[1]["exclusion_reason"] = ""
+    elif defect == "outcome_without_support": assessments[0]["findings"][0]["relation"] = "context"
+    calls = []
+    def generation(*args, **kwargs):
+        calls.append(1)
+        return providers.ModelAnalysis.model_validate(answer)
+    monkeypatch.setattr(providers, "generate", generation)
+    with pytest.raises(ProviderError, match="invalid_evidence"):
+        LiveAdapter().analyze("A selected claim.", [first, second], [first_passage, second_passage])
+    assert len(calls) == 2  # The existing bounded repair still cannot publish invalid evidence.
+
+
+def test_source_assessment_explicit_exclusion_preserves_existing_analysis_api(monkeypatch):
+    remote_settings("openai_compatible")
+    first, first_passage = evidence()
+    second, second_passage = evidence()
+    answer = providers.ModelAnalysis.model_validate({"outcome": "insufficient_evidence", "source_assessments": [
+        {"source_id": first.id, "findings": [], "exclusion_reason": "The source reports a different metric."},
+        {"source_id": second.id, "findings": [], "exclusion_reason": "The source reports a different period."},
+    ], "limitations": "No selected source supplies the requested metric and period."})
+    monkeypatch.setattr(providers, "generate", lambda *args, **kwargs: answer)
+    result = LiveAdapter().analyze("An unsupported claim.", [first, second], [first_passage, second_passage])
+    assert result == providers.AnalysisResult("insufficient_evidence", [], answer.limitations)
+    assert configuration()["schema_version"] == "source-assessments-v2"
+
 def test_live_adapter_rejects_invented_citations_after_one_repair(monkeypatch):
     remote_settings()
     doc,passage=evidence()
     calls=[]
     def handler(request):
         calls.append(1)
-        output={"outcome":"supported_in_sources","findings":[{"passage_id":uid(),"relation":"supports","quote":"Invented quote.","explanation":"Unsupported."}],"limitations":"None."}
+        output={"outcome":"supported_in_sources","source_assessments":[{"source_id":doc.id,"findings":[{"passage_id":uid(),"relation":"supports","quote":"Invented quote.","explanation":"Unsupported."}],"exclusion_reason":""}],"limitations":"None."}
         return httpx.Response(200,json={"status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":json.dumps(output)}]}]})
     monkeypatch.setattr(providers,"transport",httpx.MockTransport(handler))
     with pytest.raises(ProviderError,match="invalid_evidence"):
