@@ -4,6 +4,7 @@
 
 - Architecture now has a public component diagram, a job-state diagram and an
   architecture decisions table. It also states which provider was exercised live.
+- Recorded the post-revert v2 live recheck: two HTTP 503 responses, so live compatibility is unconfirmed.
 
 5 November2026.
 

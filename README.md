@@ -158,7 +158,7 @@ A Dockerised Playwright harness that needs no local browser is in [verification]
 
 ## Limitations
 
-- **Live AI quality is not established.** Live generation was tested only with `gemini-3.5-flash-lite` on a few synthetic samples, using lexical (not semantic) retrieval. Earlier analysis versions produced correct outcomes and exact quotes on three text cases but missed one expected context quote. An experimental `grounded-evidence-v5` version was rejected by Gemini with HTTP 400 and has been reverted; the app uses `grounded-evidence-v2`, which completed live requests with HTTP 200. Live PDF investigations were only partially exercised. See [live validation](docs/live-validation.md).
+- **Live AI quality is not established.** Live generation was tested only with `gemini-3.5-flash-lite` on a few synthetic samples, using lexical (not semantic) retrieval. Earlier analysis versions produced correct outcomes and exact quotes on three text cases but missed one expected context quote. An experimental `grounded-evidence-v5` version was rejected by Gemini with HTTP 400 and has been reverted; the app uses `grounded-evidence-v2`, which completed live requests with HTTP 200 on 6 November. A recheck on 11 November got HTTP 503 (service unavailable) twice, so current live compatibility is unconfirmed. Live PDF investigations were only partially exercised. See [live validation](docs/live-validation.md).
 - Fixture mode answers only the three bundled sample claims. Its results are predefined and do not measure model quality.
 - `local_lexical` retrieval is word-count hashing, not semantic search.
 - Scanned PDFs without a text layer are rejected (no OCR). PDF reading order can differ from the visual layout.
