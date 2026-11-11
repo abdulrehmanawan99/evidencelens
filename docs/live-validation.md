@@ -18,8 +18,9 @@ claim; these are a handful of small development cases.
 | 6 Nov 2026 | v3 | 1 | PDF conflict: HTTP 200, 3/3 expected quotes including the preliminary-estimate context. |
 | 6 Nov 2026 | v4 | 1 | Text conflict: HTTP 200, 2/3 expected quotes. |
 | 10 Nov 2026 | v5 | 1 | Text conflict: **HTTP 400** (`provider_request_rejected`), no output to score. |
+| 11 Nov 2026 | v2 (post-revert) | 2 | Text conflict: **HTTP 503** twice (`provider_unavailable`), no output to score. |
 
-Total external requests: 13. The text conflict case has never reached 3/3 expected
+Total external requests: 15. The text conflict case has never reached 3/3 expected
 quotations; the only 3/3 result was one PDF run under v3.
 
 ## v5 per-source assessment check (10 November 2026)
@@ -52,9 +53,25 @@ supplied source (findings or an explicit exclusion reason), using the response s
 
 Consequence: v5 was reverted on 10 November 2026 and the app returned to
 `grounded-evidence-v2`, which completed live requests with HTTP 200 (v2 is not
-re-checked live after the revert). Fixture mode, the evaluation harness and the test
+re-checked live after the revert; see the next section). Fixture mode, the evaluation harness and the test
 suite are unaffected. The private local report is `.local/live-api-v5-check.json`
 (status-only HTTP log `.local/live-http-v5-check.jsonl`).
+
+## v2 post-revert recheck (11 November 2026)
+
+- Setup: current `main` code (`grounded-evidence-v2`), a separate fresh database, the
+  synthetic text sample, local lexical retrieval, and an API plus guarded worker with the
+  key only in their process environment. The budget file
+  `.local/live-call-budget-v2-recheck.json` allowed one request; after it returned 503,
+  one further request was allowed after a pause (two in total).
+- Case: development `harbor-conflict` (text), as in the v5 check.
+- Result: **both requests returned HTTP 503** (`provider_unavailable`) after 3.3 s and
+  13.1 s end to end. No output was returned, so nothing could be scored.
+- The guard stopped after the second failure. No further retries were made.
+- Interpretation: 503 means the service was unavailable. That differs from the v5
+  rejection (400): the request was not refused as invalid. It is still not evidence that
+  v2 works today. The most recent successful v2 run is the 6 November HTTP 200 result
+  above. Current live compatibility of v2 is **unconfirmed**.
 
 ## Original session details (6 November 2026)
 

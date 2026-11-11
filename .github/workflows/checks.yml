@@ -56,7 +56,7 @@ jobs:
       - run: git diff --exit-code -- apps/web/lib/openapi.json apps/web/lib/schema.d.ts
       - run: npm run typecheck && npm run build
         working-directory: apps/web
-      - run: npx playwright install --with-deps chromium
+      - run: npx playwright install --with-deps chromium || (echo 'apt mirror unavailable; using runner image libraries' && npx playwright install chromium)
         working-directory: apps/web
       - run: |
           python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 > /tmp/evidencelens-api.log 2>&1 &

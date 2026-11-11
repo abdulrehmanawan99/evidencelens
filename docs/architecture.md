@@ -2,6 +2,32 @@
 
 EvidenceLens is a private local installation: Next.js UI → FastAPI API → PostgreSQL 17/pgvector and a private artifact directory. A separate Python worker claims durable PostgreSQL jobs. Docker Compose also provides a complete local runtime. There is no Redis, hosted identity, crawling, or autonomous external action.
 
+```mermaid
+flowchart LR
+    Browser["Browser<br/>React UI + PDF.js reader"] <--> Web["Next.js<br/>same-origin API proxy"]
+    Web <--> API["FastAPI API<br/>validation, ownership checks"]
+    API <--> DB[("PostgreSQL 17 + pgvector<br/>records, passages, vectors, durable jobs")]
+    API <--> Files[("Private originals<br/>and saved exports")]
+    Worker["Python worker<br/>leased jobs"] <--> DB
+    Worker <--> Files
+    Worker --> Parser["Isolated PDF parser<br/>(no network)"]
+    Worker --> Adapters["Generation and embedding adapters"]
+    Adapters --> Fixture["Fixture mode (default)"]
+    Adapters -.-> Gemini["Gemini via OpenAI-compatible chat<br/>gemini-3.5-flash-lite (opt-in)"]
+    Adapters -.-> Other["Other OpenAI-compatible / Ollama<br/>(supported, not live-tested)"]
+```
+
+```mermaid
+stateDiagram-v2
+    [*] --> queued
+    queued --> running: worker claims lease
+    running --> succeeded: validated results published
+    running --> running: lease expired, another worker reclaims it (attempts < 3)
+    running --> failed: error, or attempts exhausted
+    queued --> cancelled: user cancels
+    running --> cancelled: user cancels
+```
+
 ## Data and ownership
 
 Collections have a server-assigned local owner. Every record-ID API checks the owning collection; composite database relationships constrain evidence to its collection and source. This boundary supports future accounts but does not authenticate people on a shared machine.
@@ -26,7 +52,7 @@ Retrieval scopes both vector and keyword queries to the pinned collection/source
 
 Generation adapters cover OpenAI Responses, strict-schema compatible chat, and Ollama chat. Embedding adapters are separate. Model text cannot invoke tools. Deterministic validation rejects wrong IDs, invented quotes, inconsistent evidence/outcome combinations, bad dimensions, nonfinite vectors, refusals, and incomplete responses. One schema/evidence repair is allowed. HTTP requests have response caps, timeout, bounded retries, no redirect following, and no environment-proxy inheritance.
 
-No live model has been accepted in this environment. Fixture mode uses hashed lexical demo vectors and predefined Harbor interpretations; it deliberately refuses arbitrary-document analysis.
+Live generation was exercised only with `gemini-3.5-flash-lite` on synthetic samples (see [live validation](live-validation.md)); no live model is accepted as quality-validated. Fixture mode uses hashed lexical demo vectors and predefined Harbor interpretations; it deliberately refuses arbitrary-document analysis.
 
 ## Durable jobs
 
@@ -41,3 +67,18 @@ Deletion first tombstones records, cancels affected jobs, and invalidates export
 OpenAPI generates frontend response types. PDF.js uses same-origin worker/fonts/maps, page controls, bounded canvas/image sizes, disabled XFA/Wasm, and text-only extracted citations. React never inserts document/model HTML. Completed jobs stop frequent polling; idle refresh and tab visibility/focus keep the reading room current.
 
 Docker uses pinned base-image digests, an external database volume, a shared private artifact bind mount, unprivileged application users, read-only app filesystems, and loopback published ports. The database initializer installs vector as administrator; the app role owns only its databases. Production hosting would require a separate identity, network, secrets, backup, and runtime-role design.
+
+## Architecture decisions
+
+| # | Decision | Why | Trade-off |
+| - | --- | --- | --- |
+| 1 | Findings must cite an in-context passage ID and an exact quotation, checked in code before publishing | A model cannot invent evidence; every claim in a brief opens the cited passage | Valid but paraphrased model output is rejected (one repair attempt is allowed) |
+| 2 | PostgreSQL is both the vector store (pgvector) and the job queue | One service to run locally; jobs, vectors and records commit in the same transactions | Exact vector search only; fine for a bounded local corpus, not large ones |
+| 3 | Hybrid retrieval: vector + full-text, fused by reciprocal rank, at most 12 passages and 3 per source | Keyword search catches exact figures and names that embeddings miss; per-source caps keep contradicting sources in context | Context can still omit a relevant passage (the 2/3 context-quote result) |
+| 4 | Durable leased jobs with fencing tokens and at most three attempts | A crashed worker cannot publish stale results, and work is not silently lost | More moving parts than a simple background task |
+| 5 | PDF parsing in an isolated parser (network-disabled container on macOS, resource-limited subprocess on Linux) | PDFs are untrusted input; parser bugs should not reach the API or secrets | Slower ingestion; Linux subprocess has no network namespace |
+| 6 | Immutable document versions; any source change bumps the collection revision and invalidates analyses and exports | A brief always matches the exact sources it cites | Re-running analysis after every source change |
+| 7 | Embedding profiles fingerprint provider, model, dimensions and chunking; explicit reindex | Vectors from different models never mix silently | Changing embedding settings requires a reindex |
+| 8 | Exports freeze a reviewed snapshot and are checksum-verified on download | Later edits cannot change a brief that was already exported | Snapshots take storage until deleted |
+| 9 | Fixture mode with lexical demo vectors by default; Gemini and other providers opt-in | Runs fully offline and deterministically for tests and first-time users | Fixture mode refuses arbitrary documents |
+| 10 | Next.js same-origin proxy in front of FastAPI | No CORS, and the API is never exposed directly to the browser | Extra hop in development |
