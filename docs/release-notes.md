@@ -1,5 +1,10 @@
 # Local v1 candidate release notes
 
+## 11 November 2026: documentation
+
+- Architecture now has a public component diagram, a job-state diagram and an
+  architecture decisions table. It also states which provider was exercised live.
+
 5 November2026.
 
 This update completes the remaining local implementation after the initial text/fixture slice: PDF parsing/rendering, versioned sources, pgvector hybrid retrieval, live adapter contracts, confirmed claims/revisions, stored exports/provenance, stronger jobs/limits/cleanup, browser checks, Docker setup, and measured fixture evaluation.

@@ -183,7 +183,7 @@ API documentation is served at <http://127.0.0.1:8000/docs> while the app runs.
 
 ## Documentation
 
-- [Architecture](docs/architecture.md)
+- [Architecture, diagrams and decisions](docs/architecture.md)
 - [Provider setup and evaluation](docs/providers.md)
 - [Live validation results](docs/live-validation.md)
 - [Verification record](docs/verification.md)
